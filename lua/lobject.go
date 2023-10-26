@@ -1,6 +1,9 @@
 package golua
 
-import "unsafe"
+import (
+	"bytes"
+	"fmt"
+)
 
 const (
 	// tags for values visible from Lua
@@ -17,151 +20,6 @@ const (
 type GCHeader = CommonHeader
 
 type StkId = *TValue /* index to stack elements */
-
-// Value - Union of all lua values
-type Value struct {
-	gc GCObject
-	p  interface{}
-	n  LuaNumber
-	b  int
-}
-
-func (v *Value) NumberValue() LuaNumber {
-	return v.n
-}
-
-func (v *Value) StringValue() *TString {
-	return v.gc.ToString()
-}
-
-type lua_TValue struct {
-	value Value
-	tt
-}
-
-type TValue = lua_TValue
-
-func (v *TValue) PtrAdd(cnt int) *TValue {
-	p := uintptr(unsafe.Pointer(v)) + unsafe.Sizeof(*v)*uintptr(cnt)
-	return (*TValue)(unsafe.Pointer(p))
-}
-
-func (v *TValue) ValuePtr() *Value {
-	return &v.value
-}
-
-func (v *TValue) GcValue() GCObject {
-	CheckExp(v.IsCollectable())
-	return v.value.gc
-}
-
-func (v *TValue) PointerValue() interface{} {
-	CheckExp(v.IsLightUserdata())
-	return v.value.p
-}
-
-func (v *TValue) NumberValue() LuaNumber {
-	CheckExp(v.IsNumber())
-	return v.value.n
-}
-
-func (v *TValue) StringValue() *TString {
-	CheckExp(v.IsString())
-	return v.value.gc.ToString()
-}
-
-func (v *TValue) BooleanValue() LuaBoolean {
-	CheckExp(v.IsBoolean())
-	return v.value.b
-}
-
-func (v *TValue) TypePtr() *ttype {
-	return &v.tt
-}
-
-// SetNil 将v赋值为nil
-// 对应C函数 `setnilvalue(obj)`
-func (v *TValue) SetNil() {
-	v.value.gc = nil
-	v.value.p = nil
-	v.tt = LUA_TNIL
-}
-
-// SetNumber 将v赋值为数字x
-// 对应C函数 `setnvalue(obj,x)`
-func (v *TValue) SetNumber(x LuaNumber) {
-	v.value.gc = nil
-	v.value.p = nil
-	v.value.n = x
-	v.tt = LUA_TNUMBER
-}
-
-func (v *TValue) SetP(x interface{}) {
-	v.value.p = x
-	v.tt = LUA_TLIGHTUSERDATA
-}
-
-func (v *TValue) SetB(x int) {
-	v.value.b = x
-	v.tt = LUA_TBOOLEAN
-}
-
-func (v *TValue) SetS(x GCObject) {
-	v.value.gc = x
-	v.tt = LUA_TSTRING
-	// todo: check live ness
-}
-
-func (v *TValue) SetU(x GCObject) {
-	v.value.gc = x
-	v.tt = LUA_TUSERDATA
-	// todo: check live ness
-}
-
-func (v *TValue) SetTh(x GCObject) {
-	v.value.gc = x
-	v.tt = LUA_TTHREAD
-	// todo: check live ness
-}
-
-func (v *TValue) SetCl(x GCObject) {
-	v.value.gc = x
-	v.tt = LUA_TFUNCTION
-	// todo: check live ness
-}
-
-func (v *TValue) SetH(x GCObject) {
-	v.value.gc = x
-	v.tt = LUA_TTABLE
-	// todo: check live ness
-}
-
-func (v *TValue) SetPt(x GCObject) {
-	v.value.gc = x
-	v.tt = LUA_TTABLE
-	// todo: check live ness
-}
-
-// IsEqualTo 比较两个TValue是否相等
-// 对应C函数 `int luaO_rawequalObj (const TValue *t1, const TValue *t2)`
-func (v *TValue) IsEqualTo(t *TValue) bool {
-	if v.Type() != t.Type() {
-		return false
-	}
-	switch v.Type() {
-	case LUA_TNIL:
-		return true
-	case LUA_TNUMBER:
-		return v.NumberValue() == t.NumberValue()
-	case LUA_TBOOLEAN:
-		return v.BooleanValue() == t.BooleanValue()
-	case LUA_TLIGHTUSERDATA:
-		return v.PointerValue() == t.PointerValue()
-	default:
-		LuaAssert(v.IsCollectable())
-		return v.GcValue() == t.GcValue()
-	}
-}
 
 type Valuer interface {
 	ValuePtr() *Value
@@ -202,3 +60,77 @@ func CeilLog2(x uint64) int {
 }
 
 var LuaObjNil = &TValue{tt: LUA_TNIL}
+
+func pushStr(L *LuaState, str []byte) {
+	L.Top().SetString(L, L.sNew(str))
+	L.IncTop()
+}
+
+// this function handles only '%d', '%c', '%f', '%p', and '%s' formats
+// 对应C函数：`const char *luaO_pushvfstring (lua_State *L, const char *fmt, va_list argp)'
+func oPushVfString(L *LuaState, format []byte, argv ...interface{}) []byte {
+	var argi = 0
+	var n = 1
+	pushStr(L, []byte(""))
+	for {
+		e := bytes.IndexByte(format, '%')
+		if e == -1 {
+			break
+		}
+		L.Top().SetString(L, L.sNewLStr(format[:e]))
+		L.IncTop()
+		arg := argv[argi]
+		argi++
+		switch format[e+1] {
+		case 's':
+			var s []byte
+			switch arg.(type) {
+			case []byte:
+				s = arg.([]byte)
+			case string:
+				s = []byte(arg.(string))
+			default:
+				s = []byte("(null)")
+			}
+			pushStr(L, s)
+		case 'c':
+			var buff [2]byte
+			switch arg.(type) {
+			case int32:
+				buff[0] = byte(arg.(int32))
+			case byte:
+				buff[0] = arg.(byte)
+			default:
+				buff[0] = '?'
+			}
+			buff[1] = 0
+			pushStr(L, buff[:])
+		case 'd':
+			v := arg.(int)
+			L.Top().SetNumber(LuaNumber(v))
+			L.IncTop()
+		case 'f':
+			v := arg.(LuaNumber)
+			L.Top().SetNumber(v)
+			L.IncTop()
+		case 'p':
+			buff := fmt.Sprintf("%p", arg)
+			pushStr(L, []byte(buff))
+		case '%':
+			pushStr(L, []byte("%"))
+			argi--
+		default:
+			var buff = [3]byte{
+				'%', format[e+1], 0,
+			}
+			pushStr(L, buff[:])
+			argi--
+		}
+		n += 2
+		format = format[e+2:]
+	}
+	pushStr(L, format)
+	L.vConcat(n+1, L.top-L.base-1)
+	L.top -= n
+	return L.Top().Ptr(-1).StringValue().Bytes
+}

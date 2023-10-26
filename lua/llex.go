@@ -58,7 +58,7 @@ var luaXTokens = []string{
 
 func (L *LuaState) LuaXInit() {
 	for i := 0; i < NUM_RESERVED; i++ {
-		ts := L.SNew([]byte(luaXTokens[i]))
+		ts := L.sNew([]byte(luaXTokens[i]))
 		ts.Fix() // reserved words are never collected
 		LuaAssert(len(luaXTokens[i]) <= TOKEN_LEN)
 		ts.Reserved = lu_byte(i + 1) // reserved word

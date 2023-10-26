@@ -174,9 +174,9 @@ func (t *Table) findIndex(L *LuaState, key StkId) int {
 	}
 }
 
-// Next 对Table进行迭代
+// hNext 对Table进行迭代
 // 同C函数 `int luaH_next (lua_State *L, Table *t, StkId key)`
-func (t *Table) Next(L *LuaState, key StkId) int {
+func (t *Table) hNext(L *LuaState, key StkId) int {
 	i := t.findIndex(L, key) /* find original element */
 	i++
 	for ; i < t.sizeArray; i++ { /* try first array part */

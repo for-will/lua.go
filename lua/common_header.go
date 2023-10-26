@@ -1,5 +1,8 @@
 package golua
 
+import "C"
+import "unsafe"
+
 type CommonHeader struct {
 	next GCObject
 	tt
@@ -15,6 +18,21 @@ func (c *CommonHeader) SetNext(obj GCObject) {
 }
 
 func (c *CommonHeader) ToString() *TString {
-	//TODO implement me
-	panic("implement me")
+	LuaAssert(c.IsString())
+	return (*TString)(unsafe.Pointer(c))
+}
+
+func (c *CommonHeader) ToTable() *Table {
+	LuaAssert(c.IsTable())
+	return (*Table)(unsafe.Pointer(c))
+}
+
+func (c *CommonHeader) ToClosure() Closure {
+	LuaAssert(c.IsFunction())
+	return (*ClosureHeader)(unsafe.Pointer(c))
+}
+
+func (c *CommonHeader) ToUpval() *UpVal {
+	LuaAssert(c.IsUpval())
+	return (*UpVal)(unsafe.Pointer(c))
 }

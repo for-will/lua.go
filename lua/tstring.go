@@ -11,13 +11,13 @@ type TString struct {
 	CommonHeader
 	Reserved lu_byte // 为1表示是Lua中的关键字
 	Hash     uint64
-	Len      uint64
+	Len      int
 	Bytes    []byte
 }
 
-func (s *TString) ToString() *TString {
-	return s
-}
+// func (s *TString) ToString() *TString {
+// 	return s
+// }
 
 func (s *TString) GetBytes() []byte {
 	return s.Bytes
@@ -37,10 +37,11 @@ type StringTable struct {
 	Size uint64
 }
 
-func (L *LuaState) LuaSResize(newSize uint64) {
+// sResize
+// 对应C函数：`void luaS_resize (lua_State *L, int newsize)'
+func (L *LuaState) sResize(newSize uint64) {
 
-	// todo:
-	// if (G(L)->gcstate == GCSsweepstring)
+	// todo: if (G(L)->gcstate == GCSsweepstring)
 	// return;  /* cannot resize during GC traverse */
 
 	// newhash = luaM_newvector(L, newsize, GCObject *);
@@ -67,12 +68,13 @@ func (L *LuaState) LuaSResize(newSize uint64) {
 	tb.Hash = newHash
 }
 
-// newlstr 创建新的字符串
+// NewLStr 创建新的字符串
 // str 字符切片
 // l 长度
 // h 字符hash值
-func (L *LuaState) newlstr(str []byte, l uint64, h uint64) *TString {
-	if l+1 > uint64(MAX_SIZET)-uint64(unsafe.Sizeof(TString{})) {
+// 对应C函数：`static TString *NewLStr (lua_State *L, const char *str, size_t l, unsigned int h)'
+func (L *LuaState) NewLStr(str []byte, l int, h uint64) *TString {
+	if l+1 > int(MAX_SIZET)-int(unsafe.Sizeof(TString{})) {
 		L.LuaMTooBig()
 	}
 	ts := &TString{
@@ -94,35 +96,33 @@ func (L *LuaState) newlstr(str []byte, l uint64, h uint64) *TString {
 	tb.Hash[h] = ts
 	tb.NUse++
 	if tb.NUse > tb.Size && tb.Size <= MAX_INT/2 {
-		L.LuaSResize(tb.Size * 2)
+		L.sResize(tb.Size * 2)
 	}
 	return ts
 }
 
-// SNewLStr ->
-// TString *luaS_newlstr (lua_State *L, const char *str, size_t l)
-func (L *LuaState) SNewLStr(str []byte, l uint64) *TString {
-	h := l
-	step := (l >> 5) + 1
-	for l1 := l; l1 >= step; l1 -= step {
-		// compute hash
+// sNewLStr
+// 对应C函数：`TString *luaS_newlstr (lua_State *L, const char *str, size_t l)'
+func (L *LuaState) sNewLStr(str []byte) *TString {
+	l := len(str)
+	h := uint64(l)                        /* seed */
+	step := (l >> 5) + 1                  /* if string is too long, don't hash all its chars */
+	for l1 := l; l1 >= step; l1 -= step { /* compute hash */
 		h = h ^ ((h << 5) + (h >> 2)) + uint64(str[l1-1])
 	}
 	o := L.G().StrT.Hash[LMod(h, L.G().StrT.Size)]
 	for ; o != nil; o = o.Next() {
 		ts := o.ToString()
 		if ts.Len == l && bytes.Compare(str[:l], ts.GetStr()) == 0 {
-			// todo:
-			// /* string may be dead */
-			// if (isdead(G(L), o)) changewhite(o);
+			// todo: if (isdead(G(L), o)) changewhite(o);
 			return ts
 		}
 	}
-	return L.newlstr(str, l, h)
+	return L.NewLStr(str, l, h)
 }
 
-func (L *LuaState) SNew(b []byte) *TString {
-	return L.SNewLStr(b, uint64(len(b)))
+func (L *LuaState) sNew(b []byte) *TString {
+	return L.sNewLStr(b)
 }
 
 func LMod(s, size uint64) uint64 {

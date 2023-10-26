@@ -1,6 +1,7 @@
 package golua
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -49,4 +50,27 @@ func TestTValue_PtrAdd(t *testing.T) {
 			t.Errorf("PtrAdd() = %v, want %v", s[i].NumberValue(), LuaNumber(i))
 		}
 	}
+}
+
+func Test_oPushVfString(t *testing.T) {
+	outputArgs := func(args ...interface{}) {
+		// a := args[0].([]byte)
+		switch args[0].(type) {
+		case nil:
+			t.Log("0 is nil")
+		case []byte:
+			t.Log("0 is []byte ", args[0].([]byte))
+		case string:
+			t.Log("0 is string ", args[0].(string))
+		default:
+			t.Log("what's 0")
+		}
+
+		// t.Log("0 is ", args[0].([]byte))
+		// b := args[1].(int32)
+		// t.Log("b = ", b)
+		t.Log(fmt.Sprintf("%p", args[0]))
+	}
+
+	outputArgs(t, 'a')
 }
