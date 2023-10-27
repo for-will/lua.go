@@ -25,10 +25,10 @@ type lua_TValue struct {
 
 type TValue = lua_TValue
 
-func (v *TValue) PtrAdd(cnt int) *TValue {
-	p := uintptr(unsafe.Pointer(v)) + unsafe.Sizeof(*v)*uintptr(cnt)
-	return (*TValue)(unsafe.Pointer(p))
-}
+// func (v *TValue) PtrAdd(cnt int) *TValue {
+// 	p := uintptr(unsafe.Pointer(v)) + unsafe.Sizeof(*v)*uintptr(cnt)
+// 	return (*TValue)(unsafe.Pointer(p))
+// }
 
 func (v *TValue) ValuePtr() *Value {
 	return &v.value
@@ -54,6 +54,11 @@ func (v *TValue) StringValue() *TString {
 	return v.value.gc.ToString()
 }
 
+func (v *TValue) UdataValue() *Udata {
+	CheckExp(v.IsUserdata())
+	return v.value.gc.ToUdata()
+}
+
 // ClosureValue
 // 对应C函数：clvalue(o)
 func (v *TValue) ClosureValue() Closure {
@@ -75,6 +80,12 @@ func (v *TValue) TypePtr() *ttype {
 	return &v.tt
 }
 
+// 对应C函数：`checkliveness(g,obj)'
+func checkliveness(g *GlobalState, obj *TValue) {
+	LuaAssert(!obj.IsCollectable() ||
+		(obj.Type() == obj.value.gc.Type() && !isdead(g, obj.value.gc)))
+}
+
 // SetNil 将v赋值为nil
 // 对应C函数 `setnilvalue(obj)`
 func (v *TValue) SetNil() {
@@ -92,12 +103,12 @@ func (v *TValue) SetNumber(x LuaNumber) {
 	v.tt = LUA_TNUMBER
 }
 
-func (v *TValue) SetP(x interface{}) {
+func (v *TValue) SetAny(x interface{}) {
 	v.value.p = x
 	v.tt = LUA_TLIGHTUSERDATA
 }
 
-func (v *TValue) SetB(L *LuaState, x int) {
+func (v *TValue) SetBoolean(L *LuaState, x int) {
 	v.value.b = x
 	v.tt = LUA_TBOOLEAN
 }
@@ -105,25 +116,25 @@ func (v *TValue) SetB(L *LuaState, x int) {
 func (v *TValue) SetString(L *LuaState, x GCObject) {
 	v.value.gc = x
 	v.tt = LUA_TSTRING
-	// todo: checkliveness(G(L),i_o)
+	checkliveness(L.G(), v)
 }
 
 func (v *TValue) SetUserData(L *LuaState, x GCObject) {
 	v.value.gc = x
 	v.tt = LUA_TUSERDATA
-	// todo: check live ness
+	checkliveness(L.G(), v)
 }
 
 func (v *TValue) SetThread(L *LuaState, x GCObject) {
 	v.value.gc = x
 	v.tt = LUA_TTHREAD
-	// todo: check live ness
+	checkliveness(L.G(), v)
 }
 
 func (v *TValue) SetClosure(L *LuaState, x GCObject) {
 	v.value.gc = x
 	v.tt = LUA_TFUNCTION
-	// todo: check live ness
+	checkliveness(L.G(), v)
 }
 
 // SetTable
@@ -131,7 +142,7 @@ func (v *TValue) SetClosure(L *LuaState, x GCObject) {
 func (v *TValue) SetTable(L *LuaState, x GCObject) {
 	v.value.gc = x
 	v.tt = LUA_TTABLE
-	// todo: check live ness
+	checkliveness(L.G(), v)
 }
 
 // SetProto
@@ -139,12 +150,17 @@ func (v *TValue) SetTable(L *LuaState, x GCObject) {
 func (v *TValue) SetProto(L *LuaState, x GCObject) {
 	v.value.gc = x
 	v.tt = LUA_TPROTO
-	// todo: check live ness
+	checkliveness(L.G(), v)
 }
 
-// toString
+func (v *TValue) SetObj(L *LuaState, obj *TValue) {
+	v.value = obj.value
+	v.tt = obj.tt
+	checkliveness(L.G(), v)
+}
+
 // 对应C函数：`int luaV_tostring (lua_State *L, StkId obj)'
-func (v *TValue) ToString(L *LuaState) bool {
+func (v *TValue) vToString(L *LuaState) bool {
 	if !v.IsNumber() {
 		return false
 	}

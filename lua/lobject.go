@@ -17,6 +17,13 @@ const (
 	LUA_TDEADKEY = LAST_TAG + 3
 )
 
+/* masks for new-style vararg */
+const (
+	VARARG_HASARG   = 1
+	VARARG_ISVARARG = 2
+	VARARG_NEEDSARG = 4
+)
+
 type GCHeader = CommonHeader
 
 type StkId = *TValue /* index to stack elements */
@@ -28,10 +35,8 @@ type Valuer interface {
 
 // SetObj 将obj2的Value和类型赋值给obj1
 // 同C `setobj(L,obj1,obj2)`
-func SetObj(L *LuaState, obj1, obj2 Valuer) {
-	*obj1.ValuePtr() = *obj2.ValuePtr()
-	*obj1.TypePtr() = *obj2.TypePtr()
-	// todo: checkliveness(G(L),o1)
+func SetObj(L *LuaState, obj1, obj2 *TValue) {
+	obj1.SetObj(L, obj2)
 }
 
 // LuaObjLog2 计算对数

@@ -10,7 +10,7 @@ func (L *LuaState) vConcat(total int, last int) {
 		var n = 2 /* number of elements handled in this pass (at least 2) */
 		if !(p1.IsString() || p1.IsNumber()) || !toString(L, p2) {
 			if !callBinTM(L, p1, p2, p1, TM_CONCAT) {
-				L.DebugConcatError(p1, p2)
+				L.gConcatError(p1, p2)
 			}
 		} else if p2.StringValue().Len == 0 { /* second op is empty? */
 			toString(L, p1) /* result is first op (as string) */
@@ -21,7 +21,7 @@ func (L *LuaState) vConcat(total int, last int) {
 			for n = 1; n < total && toString(L, top.Ptr(-n-1)); n++ {
 				l := top.Ptr(-n - 1).StringValue().Len
 				if l >= int(MAX_SIZET)-tl {
-					L.DebugRunError("string length overflow")
+					L.gRunError("string length overflow")
 				}
 				tl += l
 			}
@@ -40,11 +40,17 @@ func (L *LuaState) vConcat(total int, last int) {
 }
 
 func toString(L *LuaState, obj StkId) bool {
-	return obj.IsString() || obj.ToString(L)
+	return obj.IsString() || obj.vToString(L)
 }
 
 // 对应C函数：`static int call_binTM (lua_State *L, const TValue *p1, const TValue *p2, StkId res, TMS event)'
 func callBinTM(L *LuaState, p1 *TValue, p2 *TValue, res StkId, event TMS) bool {
 	// todo: callBinTM
 	return false
+}
+
+// 对应C函数：`void luaV_execute (lua_State *L, int nexeccalls)'
+func (L *LuaState) vExecute(nExecCalls int) {
+	// todo: vExecute
+	panic("not implemented")
 }

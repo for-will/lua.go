@@ -36,3 +36,8 @@ func (c *CommonHeader) ToUpval() *UpVal {
 	LuaAssert(c.IsUpval())
 	return (*UpVal)(unsafe.Pointer(c))
 }
+
+func (c *CommonHeader) ToUdata() *Udata {
+	LuaAssert(c.IsUserdata())
+	return (*Udata)(unsafe.Pointer(c))
+}

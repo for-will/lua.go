@@ -27,6 +27,10 @@ func LuaUpValueIndex(i int) int {
 	return LUA_GLOBALSINDEX - i
 }
 
+// LUA_MINSTACK
+/* minimum Lua stack available to a C function */
+const LUA_MINSTACK = 20
+
 /* functions that read/write blocks when loading/dumping Lua chunks */
 
 // LuaReadFunc
@@ -51,3 +55,24 @@ func (L *LuaState) ToString(i int) []byte {
 	s, _ := L.ToLString(i)
 	return s
 }
+
+//
+// Debug API
+//
+
+/* Event codes */
+const (
+	LUA_HOOKCALL    = 0
+	LUA_HOOKRET     = 1
+	LUA_HOOKLINE    = 2
+	LUA_HOOKCOUNT   = 3
+	LUA_HOOKTAILRET = 4
+)
+
+/* Event masks */
+const (
+	LUA_MASKCALL  = 1 << LUA_HOOKCALL
+	LUA_MASKRET   = 1 << LUA_HOOKRET
+	LUA_MASKLINE  = 1 << LUA_HOOKLINE
+	LUA_MASKCOUNT = 1 << LUA_HOOKCOUNT
+)

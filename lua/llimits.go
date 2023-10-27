@@ -22,11 +22,6 @@ func CheckExp(c bool) {
 	}
 }
 
-// Instruction 对应C类型`Instruction`
-// type for virtual-machine instructions
-// must be an unsigned with (at least) 4 bytes (see details in lopcodes.h)
-type Instruction = int32
-
 // CondHardStackTests
 // 对应C函数：condhardstacktests(x)
 func CondHardStackTests() bool {

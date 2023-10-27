@@ -1,5 +1,7 @@
 package golua
 
+import "log"
+
 // FIXEDBIT bit 5 - object is fixed (should not be collected)
 const (
 	WHITE0BIT = 0
@@ -24,4 +26,17 @@ func (c *CommonHeader) IsBlack() bool {
 // 对应C函数：`isgray(x)'
 func (c *CommonHeader) IsGray() bool {
 	return !c.IsBlack() && !c.IsWhite()
+}
+
+// 对应C函数：`isdead(g,v)'
+func isdead(g *GlobalState, v GCObject) bool {
+	// todo: isdead
+	log.Println("isdead: not implemented ")
+	return false
+}
+
+// 对应C函数：`luaC_checkGC(L)'
+func (L *LuaState) cCheckGC() {
+	// todo: cCheckGC
+	log.Println("cCheckGC not implemented")
 }

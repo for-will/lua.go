@@ -8,18 +8,22 @@ const (
 // type GCObject interface{}
 
 type GCObject interface {
+	Type() ttype
 	Next() GCObject
 	SetNext(obj GCObject)
 	ToString() *TString // gco2ts
 	ToTable() *Table
 	ToClosure() Closure
 	ToUpval() *UpVal
+	ToUdata() *Udata
 }
 
 type GlobalState struct {
-	StrT      *StringTable /* hash table for strings */
-	buff      MBuffer      /* temporary buffer for string concatentation */
-	lRegistry TValue
+	StrT      *StringTable     /* hash table for strings */
+	buff      MBuffer          /* temporary buffer for string concatentation */
+	lRegistry TValue           /* */
+	mt        [NUM_TAGS]*Table /* metatables for basic types */
+	tmname    [TM_N]*TString   /* array with tag-method names */
 }
 
 func (g *GlobalState) LuaCWhite() lu_byte {
@@ -37,7 +41,7 @@ type LuaState struct {
 	savedPc       *Instruction /* `savedpc' of current function */
 	stackLast     int          /* last free slot in the stack */
 	stack         []TValue     /* stack base */
-	endCi         *CallInfo    /* points after end of ci array */
+	endCi         int          /* points after end of ci array */
 	baseCi        []CallInfo   /* array of CallInfo's */
 	stackSize     int          /* */
 	sizeCi        int          /* size of array `base_ci' */
@@ -127,33 +131,33 @@ func (L *LuaState) SetTop(idx int) {
 // IncTop
 // 对应C函数：`incr_top(L)'
 func (L *LuaState) IncTop() {
-	L.CheckStack(1)
+	L.dCheckStack(1)
 	L.top++
 }
 
-// CheckStack
+// dCheckStack
 // 对应C函数：`luaD_checkstack(L,n)'
-func (L *LuaState) CheckStack(n int) {
+func (L *LuaState) dCheckStack(n int) {
 	if L.stackLast-L.top <= n {
-		L.GrowStack(n)
+		L.dGrowStack(n)
 	} else if CondHardStackTests() {
-		L.ReAllocStack(L.stackSize - EXTRA_STACK - 1)
+		L.dReAllocStack(L.stackSize - EXTRA_STACK - 1)
 	}
 }
 
-// GrowStack
+// dGrowStack
 // 对应C函数：`void luaD_growstack (lua_State *L, int n)'
-func (L *LuaState) GrowStack(n int) {
+func (L *LuaState) dGrowStack(n int) {
 	if n <= L.stackSize { /* double size is enough? */
-		L.ReAllocStack(2 * L.stackSize)
+		L.dReAllocStack(2 * L.stackSize)
 	} else {
-		L.ReAllocStack(L.stackLast + n)
+		L.dReAllocStack(L.stackLast + n)
 	}
 }
 
-// ReAllocStack
+// dReAllocStack
 // 对应C函数：`void luaD_reallocstack (lua_State *L, int newsize)'
-func (L *LuaState) ReAllocStack(newSize int) {
+func (L *LuaState) dReAllocStack(newSize int) {
 	oldStack := L.stack
 	realSize := newSize + 1 + EXTRA_STACK
 	LuaAssert(L.stackLast == L.stackSize-EXTRA_STACK-1)
@@ -180,6 +184,20 @@ func (L *LuaState) CI() *CallInfo {
 	return &L.baseCi[L.ci]
 }
 
+//
+// 添加的一些函数，简化操作
+//
+
+func (L *LuaState) PushObj(obj *TValue) {
+	SetObj(L, L.Top(), obj)
+	L.top++
+}
+
+func (L *LuaState) PushTable(h *Table) {
+	L.Top().SetTable(L, h)
+	L.top++
+}
+
 // CallInfo
 // information about a call.
 // 对应C函数：`struct CallInfo '
@@ -190,4 +208,21 @@ type CallInfo struct {
 	savedPc   *Instruction
 	nResults  int /* expected number of results from this function */
 	tailCalls int /* number of tail calls lost under this entry */
+}
+
+// Func
+// 对应C函数：`ci_func(ci)'
+func (ci *CallInfo) Func() Closure {
+	return ci.fn.ClosureValue()
+}
+
+// 对应C函数：`f_isLua(ci)'
+func (ci *CallInfo) fIsLua() bool {
+	return ci.Func().IsLFunction()
+}
+
+// IsLua
+// 对应C函数：`isLua(ci)'
+func (ci *CallInfo) IsLua() bool {
+	return ci.fn.IsFunction() && ci.fIsLua()
 }

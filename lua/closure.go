@@ -4,7 +4,7 @@ import "unsafe"
 
 // LuaCFunction
 // 对应C类型：`typedef int (*lua_CFunction) (lua_State *L)`
-type LuaCFunction func(L *LuaState)
+type LuaCFunction func(L *LuaState) int
 
 type ClosureHeader struct {
 	CommonHeader

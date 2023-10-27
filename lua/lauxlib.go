@@ -4,12 +4,13 @@ import (
 	"os"
 )
 
-func (L *LuaState) DoFile(filename string) int {
-	ret := L.LLoadFile([]byte(filename))
-	if ret != 0 {
+// LDoFile
+// 对应C函数：`luaL_dofile(L, fn)'
+func (L *LuaState) LDoFile(filename string) int {
+	if ret := L.LLoadFile([]byte(filename)); ret != 0 {
 		return ret
 	}
-
+	return L.PCall(0, LUA_MULTRET, 0)
 }
 
 // LLoadFile

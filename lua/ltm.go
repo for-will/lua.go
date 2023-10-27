@@ -22,3 +22,21 @@ const (
 	TM_CALL
 	TM_N /* number of elements in the enum */
 )
+
+// 对应C函数：`const TValue *luaT_gettmbyobj (lua_State *L, const TValue *o, TMS event)'
+func (L *LuaState) tGetTMByObj(o *TValue, event TMS) *TValue {
+	var mt *Table
+	switch o.Type() {
+	case LUA_TTABLE:
+		mt = o.TableValue().metatable
+	case LUA_TUSERDATA:
+		mt = o.UdataValue().metatable
+	default:
+		mt = L.G().mt[o.Type()]
+	}
+	if mt != nil {
+		return mt.GetByString(L.G().tmname[event])
+	} else {
+		return LuaObjNil
+	}
+}

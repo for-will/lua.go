@@ -23,14 +23,15 @@ func (L *LuaState) PCall(nargs int, nresults int, errFunc int) int {
 	c.fun = L.AtTop(-(nargs + 1)) /* function to be called */
 	c.nResults = nresults
 	status := L.dPCall(f_call, &c, savestack(L, c.fun), funcIdx)
-	// todo: adjustresults(L, nresults);
+	L.adjustResults(nresults)
 	L.Unlock()
 	return status
 }
 
 // 对应C函数：`static void f_call (lua_State *L, void *ud)'
 func f_call(L *LuaState, ud interface{}) {
-	// todo: f_call
+	c := ud.(*callS)
+	L.dCall(c.fun, c.nResults)
 }
 
 // Execute a protected call
@@ -44,7 +45,7 @@ type callS struct { /* data to `f_call' */
 // 对应C函数：`LUA_API void lua_pushlstring (lua_State *L, const char *s, size_t len)'
 func (L *LuaState) PushLString(s []byte) {
 	L.Lock()
-	// todo: luaC_checkGC(L);
+	L.cCheckGC()
 	L.Top().SetString(L, L.sNewLStr(s))
 	L.apiIncrTop()
 	L.Unlock()
@@ -58,7 +59,7 @@ func (L *LuaState) PushLiteral(s string) {
 
 func (L *LuaState) PushFString(format string, args ...interface{}) []byte {
 	L.Lock()
-	// todo: luaC_checkGC(L);
+	L.cCheckGC()
 	ret := oPushVfString(L, []byte(format), args)
 	L.Unlock()
 	return ret
@@ -80,6 +81,13 @@ func (L *LuaState) apiIncrTop() {
 	L.top++
 }
 
+// 对应C函数：`adjustresults(L,nres)'
+func (L *LuaState) adjustResults(nres int) {
+	if nres == LUA_MULTRET && L.top >= L.CI().top {
+		L.CI().top = L.top
+	}
+}
+
 // 对应C函数：`checkresults(L,na,nr)'
 func (L *LuaState) checkResults(na int, nr int) {
 	ApiCheck(L, nr == LUA_MULTRET || L.CI().top-L.top >= nr-na)
@@ -90,12 +98,12 @@ func (L *LuaState) checkResults(na int, nr int) {
 func (L *LuaState) ToLString(idx int) (b []byte, len int) {
 	o := index2adr(L, idx)
 	if o.IsNil() {
-		L.Lock()            /*`luaV_tostring' may create a new string */
-		if !o.ToString(L) { /* conversion failed? */
+		L.Lock()             /*`luaV_tostring' may create a new string */
+		if !o.vToString(L) { /* conversion failed? */
 			L.Unlock()
 			return nil, 0
 		}
-		// todo: luaC_checkGC(L);
+		L.cCheckGC()
 		o = index2adr(L, idx) /* previous call may reallocate the stack */
 		L.Unlock()
 	}

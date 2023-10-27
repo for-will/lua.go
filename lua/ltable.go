@@ -169,8 +169,8 @@ func (t *Table) findIndex(L *LuaState, key StkId) int {
 			}
 			n = n.GetNext()
 		}
-		L.DebugRunError("invalid key to 'next'") /* key not found */
-		return 0                                 /* to avoid warnings */
+		L.gRunError("invalid key to 'next'") /* key not found */
+		return 0                             /* to avoid warnings */
 	}
 }
 
@@ -309,7 +309,7 @@ func (t *Table) setNodeVector(L *LuaState, size int) {
 	} else {
 		lsize = CeilLog2(uint64(size))
 		if lsize > MAXBITS {
-			L.DebugRunError("table overflow")
+			L.gRunError("table overflow")
 		}
 		size = 1 << size
 		t.node = make([]Node, size)
@@ -341,7 +341,7 @@ func (t *Table) resize(L *LuaState, nasize int, nhsize int) {
 		/* re-insert elements from vanishing slice */
 		for i := nasize; i < oldasize; i++ {
 			if !t.array[i].IsNil() {
-				v := t.SetNum(L, i+1)
+				v := t.SetByNum(L, i+1)
 				SetObj(L, v, &t.array[i])
 			}
 		}
@@ -396,10 +396,10 @@ func (t *Table) rehash(L *LuaState, ek *TValue) {
 	t.resize(L, nasize, totaluse-na)
 }
 
-// NewTable 创建一个数组部分长度为narray，散列部分长度为nhash的Table,
+// hNew 创建一个数组部分长度为narray，散列部分长度为nhash的Table,
 // 并返回新创建Table的指针。
 // 同C函数 `Table *luaH_new (lua_State *L, int narray, int nhash)`
-func NewTable(L *LuaState, narray int, nhash int) *Table {
+func (L *LuaState) hNew(narray int, nhash int) *Table {
 	t := &Table{
 		metatable: nil,
 		flags:     ^lu_byte(0),
@@ -487,9 +487,9 @@ func (t *Table) GetNum(key int) *TValue {
 	}
 }
 
-// GetString search function for string
+// GetByString search function for string
 // 对应C函数 `const TValue *luaH_getstr (Table *t, TString *key)'
-func (t *Table) GetString(key *TString) *TValue {
+func (t *Table) GetByString(key *TString) *TValue {
 	n := t.HashStr(key)
 	for n != nil {
 		if n.GetKey().IsString() && n.GetKey().StringValue() == key {
@@ -507,7 +507,7 @@ func (t *Table) Get(key *TValue) *TValue {
 	case LUA_TNIL:
 		return LuaObjNil
 	case LUA_TSTRING:
-		return t.GetString(key.StringValue())
+		return t.GetByString(key.StringValue())
 	case LUA_TNUMBER:
 		n := key.NumberValue()
 		k := int(n)
@@ -546,9 +546,9 @@ func (t *Table) Set(L *LuaState, key *TValue) *TValue {
 	}
 }
 
-// SetNum 获取key在t中对应的TValue的指针，如果t中不存在则创建并返回
+// SetByNum 获取key在t中对应的TValue的指针，如果t中不存在则创建并返回
 // 同C函数 `TValue *luaH_setnum (lua_State *L, Table *t, int key)`
-func (t *Table) SetNum(L *LuaState, key int) *TValue {
+func (t *Table) SetByNum(L *LuaState, key int) *TValue {
 	p := t.GetNum(key)
 	if p != LuaObjNil {
 		return p
@@ -556,6 +556,18 @@ func (t *Table) SetNum(L *LuaState, key int) *TValue {
 		k := &TValue{}
 		k.SetNumber(LuaNumber(key))
 		return t.NewKey(L, k)
+	}
+}
+
+// SetByStr
+// 同C函数：`TValue *luaH_setstr (lua_State *L, Table *t, TString *key)'
+func (t *Table) SetByStr(L *LuaState, key *TString) *TValue {
+	if p := t.GetByString(key); p != LuaObjNil {
+		return p
+	} else {
+		var k TValue
+		k.SetString(L, key)
+		return t.NewKey(L, &k)
 	}
 }
 
