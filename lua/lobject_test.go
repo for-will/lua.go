@@ -1,7 +1,7 @@
 package golua
 
 import (
-	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -44,7 +44,7 @@ func TestSliceCopy(t *testing.T) {
 func TestTValue_PtrAdd(t *testing.T) {
 	s := make([]TValue, 10)
 	for i := 0; i < len(s); i++ {
-		s[0].PtrAdd(i).SetNumber(LuaNumber(i))
+		s[0].Ptr(i).SetNumber(LuaNumber(i))
 		// t.Log(s[i].NumberValue())
 		if !s[i].IsNumber() || s[i].NumberValue() != LuaNumber(i) {
 			t.Errorf("PtrAdd() = %v, want %v", s[i].NumberValue(), LuaNumber(i))
@@ -52,25 +52,24 @@ func TestTValue_PtrAdd(t *testing.T) {
 	}
 }
 
-func Test_oPushVfString(t *testing.T) {
-	outputArgs := func(args ...interface{}) {
-		// a := args[0].([]byte)
-		switch args[0].(type) {
-		case nil:
-			t.Log("0 is nil")
-		case []byte:
-			t.Log("0 is []byte ", args[0].([]byte))
-		case string:
-			t.Log("0 is string ", args[0].(string))
-		default:
-			t.Log("what's 0")
-		}
-
-		// t.Log("0 is ", args[0].([]byte))
-		// b := args[1].(int32)
-		// t.Log("b = ", b)
-		t.Log(fmt.Sprintf("%p", args[0]))
+func Test_oPushVfString1(t *testing.T) {
+	type args struct {
+		L      *LuaState
+		format []byte
+		argv   []interface{}
 	}
-
-	outputArgs(t, 'a')
+	tests := []struct {
+		name string
+		args args
+		want []byte
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.args.L.oPushVfString(tt.args.format, tt.args.argv...); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("oPushVfString() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

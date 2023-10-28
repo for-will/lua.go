@@ -60,7 +60,7 @@ func (L *LuaState) PushLiteral(s string) {
 func (L *LuaState) PushFString(format string, args ...interface{}) []byte {
 	L.Lock()
 	L.cCheckGC()
-	ret := oPushVfString(L, []byte(format), args)
+	ret := L.oPushVfString([]byte(format), args)
 	L.Unlock()
 	return ret
 }

@@ -1,5 +1,7 @@
 package golua
 
+import "unsafe"
+
 const (
 	EXTRA_STACK = 5 /* extra stack space to handle TM calls and some other extras */
 )
@@ -19,16 +21,17 @@ type GCObject interface {
 }
 
 type GlobalState struct {
-	StrT      *StringTable     /* hash table for strings */
-	buff      MBuffer          /* temporary buffer for string concatentation */
-	lRegistry TValue           /* */
-	mt        [NUM_TAGS]*Table /* metatables for basic types */
-	tmname    [TM_N]*TString   /* array with tag-method names */
+	StrT         *StringTable     /* hash table for strings */
+	currentWhite lu_byte          /* */
+	buff         MBuffer          /* temporary buffer for string concatentation */
+	lRegistry    TValue           /* */
+	mt           [NUM_TAGS]*Table /* metatables for basic types */
+	tmname       [TM_N]*TString   /* array with tag-method names */
 }
 
-func (g *GlobalState) LuaCWhite() lu_byte {
-	// todo:
-	return 0
+// 对应C函数：`luaC_white(g)'
+func (g *GlobalState) cWhite() lu_byte {
+	return g.currentWhite & WHITEBITS
 }
 
 type LuaState struct {
@@ -166,12 +169,30 @@ func (L *LuaState) dReAllocStack(newSize int) {
 	L.stack = newStack
 	L.stackSize = realSize
 	L.stackLast = newSize
-	L.correctStack(oldStack)
+	correctstack(L, oldStack)
 }
 
 // 对应C函数：`static void correctstack (lua_State *L, TValue *oldstack)`
-func (L *LuaState) correctStack(oldStack []TValue) {
-	// todo:
+func correctstack(L *LuaState, oldStack []TValue) {
+	// L.top，L.base 已经是在stack中的下标，不用处理
+	stackPtr := uintptr(unsafe.Pointer(&L.stack[0]))
+	oldPtr := uintptr(unsafe.Pointer(&oldStack[0]))
+	correct := func(v *TValue) *TValue {
+		if v == nil {
+			return nil
+		}
+		p := uintptr(unsafe.Pointer(v)) - oldPtr + stackPtr
+		return (*TValue)(unsafe.Pointer(p))
+	}
+	for up := L.openUpval; up != nil; up = up.Next() {
+		uv := up.ToUpval()
+		uv.v = correct(uv.v)
+	}
+	for i := 0; i <= L.ci; i++ {
+		ci := L.baseCi[i]
+		ci.fn = correct(ci.fn)
+		// ci.base和ci.top不需要处理
+	}
 }
 
 // CurrFunc

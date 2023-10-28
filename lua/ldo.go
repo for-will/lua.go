@@ -91,7 +91,7 @@ func parser(L *LuaState, ud interface{}) {
 	c := p.z.Lookahead()
 	L.cCheckGC()
 	if c == int([]byte(LUA_SIGNATURE)[0]) {
-		tf = L.Undump(p.z, &p.buff, p.name)
+		tf = L.uUndump(p.z, &p.buff, p.name)
 	} else {
 		tf = L.YParser(p.z, &p.buff, p.name)
 	}

@@ -38,3 +38,31 @@ func (L *LuaState) fClose(level StkId) {
 		L.openUpval = uv.next /* remove from `open' list */
 	}
 }
+
+// 对应C函数：`Proto *luaF_newproto (lua_State *L)'
+func (L *LuaState) fNewProto() *Proto {
+	f := &Proto{
+		k:               nil,
+		code:            nil,
+		p:               nil,
+		lineInfo:        nil,
+		locVars:         nil,
+		upValues:        nil,
+		source:          nil,
+		sizeUpValues:    0,
+		sizeK:           0,
+		sizeCode:        0,
+		sizeLineInfo:    0,
+		sizeP:           0,
+		sizeLocVars:     0,
+		lineDefined:     0,
+		lastLineDefined: 0,
+		gcList:          nil,
+		nups:            0,
+		numParams:       0,
+		isVarArg:        0,
+		maxStackSize:    0,
+	}
+	// todo: luaC_link(L, obj2gco(f), LUA_TPROTO);
+	return f
+}

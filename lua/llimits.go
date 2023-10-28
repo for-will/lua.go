@@ -1,6 +1,9 @@
 package golua
 
-import "math"
+import (
+	"log"
+	"math"
+)
 
 type lu_byte = uint8
 
@@ -13,10 +16,13 @@ const MAX_INT = math.MaxInt32 - 2
 const LUA_MINBUFFER = 32 /* minimum size fo string buffer */
 
 func LuaAssert(c bool) {
-	// todo
+	// todo: LuaAssert
+	if !c {
+		log.Panic("assert failed")
+	}
 }
 func CheckExp(c bool) {
-	// todo
+	// todo: CheckExp
 	if !c {
 		panic("CheckExp Failed")
 	}

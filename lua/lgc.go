@@ -8,6 +8,7 @@ const (
 	WHITE1BIT = 1
 	BLACKBIT  = 2
 	FIXEDBIT  = 5
+	WHITEBITS = 1<<WHITE0BIT | 1<<WHITE1BIT
 )
 
 // IsWhite

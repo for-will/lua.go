@@ -106,7 +106,11 @@ func (t *Table) HashStr(str *TString) *Node {
 }
 
 func (t *Table) HashBoolean(b LuaBoolean) *Node {
-	return t.HashPow2(uint64(b))
+	if b {
+		return t.HashPow2(1)
+	} else {
+		return t.HashPow2(0)
+	}
 }
 
 func (t *Table) HashPointer(p interface{}) *Node {
@@ -182,14 +186,14 @@ func (t *Table) hNext(L *LuaState, key StkId) int {
 	for ; i < t.sizeArray; i++ { /* try first array part */
 		if !t.array[i].IsNil() { /* a non-nil value? */
 			key.SetNumber(LuaNumber(i + 1))
-			SetObj(L, key.PtrAdd(1), &t.array[i])
+			SetObj(L, key.Ptr(1), &t.array[i])
 			return 1
 		}
 	}
 	for i -= t.sizeArray; i < int(t.SizeNode()); i++ { /* then hash part */
 		if !t.GetNode(uint64(i)).GetVal().IsNil() { /* a non-nil value? */
 			SetObj(L, key, t.GetNode(uint64(i)).GetKeyVal())
-			SetObj(L, key.PtrAdd(1), t.GetNode(uint64(i)).GetVal())
+			SetObj(L, key.Ptr(1), t.GetNode(uint64(i)).GetVal())
 			return 1
 		}
 	}
@@ -538,9 +542,9 @@ func (t *Table) Set(L *LuaState, key *TValue) *TValue {
 		return p
 	} else {
 		if key.IsNil() {
-			// todo: luaG_runerror(L, "table index is nil")
+			L.gRunError("table index is nil")
 		} else if key.IsNumber() && math.IsNaN(key.NumberValue()) {
-			// todo: luaG_runerror(L, "table index is NaN");
+			L.gRunError("table index is NaN")
 		}
 		return t.NewKey(L, key)
 	}

@@ -18,3 +18,9 @@ func (L *LuaState) gTypeError(o *TValue, op string) {
 	// todo: gTypeError
 	log.Println("type error")
 }
+
+func gCheckCode(pt *Proto) int {
+	// todo: gCheckCode
+	log.Println("gCheckCode not implemented")
+	return 0
+}

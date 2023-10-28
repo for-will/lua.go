@@ -75,13 +75,13 @@ func (L *LuaState) sResize(newSize uint64) {
 // 对应C函数：`static TString *NewLStr (lua_State *L, const char *str, size_t l, unsigned int h)'
 func (L *LuaState) NewLStr(str []byte, l int, h uint64) *TString {
 	if l+1 > int(MAX_SIZET)-int(unsafe.Sizeof(TString{})) {
-		L.LuaMTooBig()
+		L.mTooBig()
 	}
 	ts := &TString{
 		CommonHeader: CommonHeader{
 			next:   nil,
 			tt:     LUA_TSTRING,
-			marked: L.G().LuaCWhite(),
+			marked: L.G().cWhite(),
 		},
 		Reserved: 0,
 		Hash:     h,

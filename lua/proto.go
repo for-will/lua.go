@@ -4,7 +4,7 @@ package golua
 // 对应C结构体：`struct Proto`
 type Proto struct {
 	CommonHeader
-	k               *TValue       /* constants used by the function */
+	k               []TValue      /* constants used by the function */
 	code            []Instruction //
 	p               []*Proto      /* functions defined inside the function */
 	lineInfo        []int         /* map from opcodes to source lines */

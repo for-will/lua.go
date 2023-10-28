@@ -44,7 +44,7 @@ type LuaWriteFunc func(L *LuaState, p []byte, sz int, ud interface{})
 // LuaNumber type of numbers in lua
 type LuaNumber = float64
 
-type LuaBoolean = int
+type LuaBoolean = bool
 
 // type for integer functions
 type lua_Interger = uintptr

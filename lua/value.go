@@ -7,7 +7,7 @@ type Value struct {
 	gc GCObject
 	p  interface{}
 	n  LuaNumber
-	b  int
+	b  bool
 }
 
 func (v *Value) NumberValue() LuaNumber {
@@ -108,7 +108,7 @@ func (v *TValue) SetAny(x interface{}) {
 	v.tt = LUA_TLIGHTUSERDATA
 }
 
-func (v *TValue) SetBoolean(L *LuaState, x int) {
+func (v *TValue) SetBoolean(x bool) {
 	v.value.b = x
 	v.tt = LUA_TBOOLEAN
 }

@@ -73,7 +73,7 @@ func pushStr(L *LuaState, str []byte) {
 
 // this function handles only '%d', '%c', '%f', '%p', and '%s' formats
 // 对应C函数：`const char *luaO_pushvfstring (lua_State *L, const char *fmt, va_list argp)'
-func oPushVfString(L *LuaState, format []byte, argv ...interface{}) []byte {
+func (L *LuaState) oPushVfString(format []byte, argv ...interface{}) []byte {
 	var argi = 0
 	var n = 1
 	pushStr(L, []byte(""))
@@ -138,4 +138,9 @@ func oPushVfString(L *LuaState, format []byte, argv ...interface{}) []byte {
 	L.vConcat(n+1, L.top-L.base-1)
 	L.top -= n
 	return L.Top().Ptr(-1).StringValue().Bytes
+}
+
+// 对应C函数：`const char *luaO_pushfstring (lua_State *L, const char *fmt, ...)'
+func (L *LuaState) oPushFString(format string, args ...interface{}) []byte {
+	return L.oPushVfString([]byte(format), args...)
 }
