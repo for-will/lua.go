@@ -3,7 +3,9 @@ package golua
 import "unsafe"
 
 const (
-	EXTRA_STACK = 5 /* extra stack space to handle TM calls and some other extras */
+	EXTRA_STACK      = 5 /* extra stack space to handle TM calls and some other extras */
+	BASIC_CI_SIZE    = 8
+	BASIC_STACK_SIZE = 2 * LUA_MINSTACK
 )
 
 // GCObject Union of all collectable objects
@@ -13,20 +15,41 @@ type GCObject interface {
 	Type() ttype
 	Next() GCObject
 	SetNext(obj GCObject)
-	ToString() *TString // gco2ts
+	ToTString() *TString // gco2ts
 	ToTable() *Table
 	ToClosure() Closure
 	ToUpval() *UpVal
 	ToUdata() *Udata
 }
 
+// GlobalState
+// `global state', shared by all threads of this state
 type GlobalState struct {
 	StrT         *StringTable     /* hash table for strings */
+	freeAlloc    LuaAlloc         /* function to reallocate memory */
+	ud           interface{}      /* auxiliary data to `frealloc' */
 	currentWhite lu_byte          /* */
+	gcState      lu_byte          /* state of garbage collector */
+	sweepStrGC   int              /* position of sweep in `strt' */
+	rootGC       GCObject         /* list of all collectable objects */
+	sweepGc      *GCObject        /* position of sweep in `rootgc' */
+	gray         []GCObject       /* list of gray objects */
+	grayAgain    []GCObject       /* list of objects to be traversed atomically */
+	weak         []GCObject       /* list of weak tables (to be cleared) */
+	tmUData      GCObject         /* last element of list of userdata to be GC */
 	buff         MBuffer          /* temporary buffer for string concatentation */
+	GCThreshold  lu_mem           /* */
+	totalBytes   lu_mem           /* number of bytes currently allocated */
+	estimate     lu_mem           /* an estimate of number of bytes actually in use */
+	gcDept       lu_mem           /* how much GC is `behind schedule' */
+	gcPause      int              /* size of pause between successive GCs */
+	gcStepMul    int              /* GC `granularity' */
+	panic        LuaCFunction     /* to be called in unprotected errors */
 	lRegistry    TValue           /* */
+	mainThread   *LuaState        /* */
+	uvHead       UpVal            /* head of double-linked list of all open upvalues */
 	mt           [NUM_TAGS]*Table /* metatables for basic types */
-	tmname       [TM_N]*TString   /* array with tag-method names */
+	tmName       [TM_N]*TString   /* array with tag-method names */
 }
 
 // 对应C函数：`luaC_white(g)'
@@ -54,12 +77,150 @@ type LuaState struct {
 	allowHook     lu_byte      /* */
 	baseHootCount int          /* */
 	hookCount     int          /* */
+	hook          LuaHook      /* */
 	lGt           TValue       /* table of globals */
 	env           TValue       /* temporary place for environments */
 	openUpval     GCObject     /* list of open upvalues in this stack */
 	gcList        GCObject     /* */
 	errorJmp      *LuaLongJmp  /* current error recover point */
 	errFunc       int          /* current error handling function (stack index) */
+}
+
+// LG
+// Main  thread combines a thread state and the global state
+// 对应C结构体：`struct LG'
+type LG struct {
+	l LuaState
+	g GlobalState
+}
+
+// NewState
+// 对应C函数：`LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud)'
+func NewState(f LuaAlloc, ud interface{}) *LuaState {
+	l := &LG{}
+	L := &l.l
+	g := &l.g
+	L.next = nil
+	L.tt = LUA_TTHREAD
+	g.currentWhite = 1<<WHITEBITS | 1<<FIXEDBIT
+	L.marked = g.cWhite()
+	L.marked |= 1<<FIXEDBIT | 1<<SFIXEDBIT
+	preinit_state(L, g)
+	g.freeAlloc = f
+	g.ud = ud
+	g.mainThread = L
+	g.uvHead.l.prev = &g.uvHead
+	g.uvHead.l.next = &g.uvHead
+	g.GCThreshold = 0 /* mark it as unfinished state */
+	g.StrT.Size = 0
+	g.StrT.NUse = 0
+	g.StrT.Hash = nil
+	L.Registry().SetNil()
+	g.buff.Init()
+	g.panic = nil
+	g.gcState = GCSPause
+	g.rootGC = L
+	g.sweepStrGC = 0
+	g.sweepGc = &g.rootGC
+	g.gray = nil
+	g.grayAgain = nil
+	g.weak = nil
+	g.tmUData = nil
+	g.totalBytes = int(unsafe.Sizeof(LG{}))
+	g.gcPause = LUAI_GCPAUSE
+	g.gcStepMul = LUAI_GCMUL
+	g.gcStepMul = 0
+	for i := 0; i < int(NUM_TAGS); i++ {
+		g.mt[i] = nil
+	}
+	if L.dRawRunProtected(f_luaopen, nil) != 0 {
+		/* memory allocation error: free partial state */
+		closeState(L)
+		L = nil
+	} else {
+		LUAIUserStateOpen(L)
+	}
+	return L
+
+}
+
+// 对应C函数：`static void close_state (lua_State *L)'
+func closeState(L *LuaState) {
+	g := L.G()
+	L.fClose(&L.stack[0]) /* close all upvalues for this thread */
+	L.cFreeAll()
+	LuaAssert(g.rootGC == L) /* collect all objects */
+	LuaAssert(g.StrT.NUse == 0)
+	L.G().StrT.Hash = nil
+	g.buff.Free()
+	freestack(L, L)
+	LuaAssert(g.totalBytes == int(unsafe.Sizeof(LG{})))
+	g.ud = nil
+}
+
+// 对应C函数：`static void stack_init (lua_State *L1, lua_State *L)'
+func stack_init(L1 *LuaState, L *LuaState) {
+	/* initialize CallInfo array*/
+	L1.baseCi = make([]CallInfo, BASIC_CI_SIZE)
+	L1.ci = 0
+	L1.sizeCi = BASIC_CI_SIZE
+	L1.endCi = L1.sizeCi - 1
+	/* initialize stack array */
+	L1.stack = make([]TValue, BASIC_STACK_SIZE+EXTRA_STACK)
+	L1.stackSize = BASIC_STACK_SIZE + EXTRA_STACK
+	L1.top = 0
+	L1.stackLast = L1.stackSize - EXTRA_STACK - 1
+	/* initialize first ci */
+	L1.CI().fn = L1.Top()
+	L1.Top().SetNil() /* `function' entry for this `ci' */
+	L1.top++
+	L1.base = L1.top
+	L1.CI().base = L1.top
+	L1.CI().top = L1.top + LUA_MINSTACK
+}
+
+// 对应C函数：static void freestack (lua_State *L, lua_State *L1)
+func freestack(L *LuaState, L1 *LuaState) {
+	L1.baseCi = nil
+	L1.stack = nil
+}
+
+// open parts that may cause memory-allocation errors
+// 对应C函数：`static void f_luaopen (lua_State *L, void *ud)'
+func f_luaopen(L *LuaState, ud interface{}) {
+	g := L.G()
+	_ = ud
+	stack_init(L, L)                          /* init stack */
+	L.GlobalTable().SetTable(L, L.hNew(0, 2)) /* table of globals */
+	L.Registry().SetTable(L, L.hNew(0, 2))    /* registry */
+	L.sResize(MINSTRTABSIZE)                  /* initial size of string table */
+	L.tInit()
+	L.xInit()
+	L.sNewLiteral(MEMERRMSG).Fix()
+	g.GCThreshold = 4 * g.totalBytes
+}
+
+// 对应C函数：`static void preinit_state (lua_State *L, global_State *g)'
+func preinit_state(L *LuaState, g *GlobalState) {
+	L.lG = g
+	L.stack = nil
+	L.stackSize = 0
+	L.errorJmp = nil
+	L.hook = nil
+	L.hookMask = 0
+	L.baseHootCount = 0
+	L.allowHook = 1
+	resethookcount(L)
+	L.openUpval = nil
+	L.sizeCi = 0
+	L.nCCalls = 0
+	L.baseCCalls = 0
+	L.status = 0
+	L.baseCi = nil
+	L.ci = 0
+	L.savedPc = nil
+	L.errFunc = 0
+	L.GlobalTable().SetNil()
 }
 
 func (L *LuaState) G() *GlobalState {

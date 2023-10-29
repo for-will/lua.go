@@ -17,7 +17,7 @@ func (c *CommonHeader) SetNext(obj GCObject) {
 	c.next = obj
 }
 
-func (c *CommonHeader) ToString() *TString {
+func (c *CommonHeader) ToTString() *TString {
 	LuaAssert(c.IsString())
 	return (*TString)(unsafe.Pointer(c))
 }

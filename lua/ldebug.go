@@ -4,6 +4,11 @@ import (
 	"log"
 )
 
+// 对应C函数：`resethookcount(L)'
+func resethookcount(L *LuaState) {
+	L.hookCount = L.baseHootCount
+}
+
 func (L *LuaState) gRunError(format string, args ...interface{}) {
 	// todo: gRunError
 	log.Printf(format, args...)

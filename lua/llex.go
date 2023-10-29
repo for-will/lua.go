@@ -56,11 +56,12 @@ var luaXTokens = []string{
 	"<number>", "<name>", "<string>", "<eof>",
 }
 
-func (L *LuaState) LuaXInit() {
+// 对应C函数：`void luaX_init (lua_State *L)'
+func (L *LuaState) xInit() {
 	for i := 0; i < NUM_RESERVED; i++ {
 		ts := L.sNew([]byte(luaXTokens[i]))
-		ts.Fix() // reserved words are never collected
+		ts.Fix() /* reserved words are never collected */
 		LuaAssert(len(luaXTokens[i]) <= TOKEN_LEN)
-		ts.Reserved = lu_byte(i + 1) // reserved word
+		ts.Reserved = lu_byte(i + 1) /* reserved word */
 	}
 }

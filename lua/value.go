@@ -15,7 +15,7 @@ func (v *Value) NumberValue() LuaNumber {
 }
 
 func (v *Value) StringValue() *TString {
-	return v.gc.ToString()
+	return v.gc.ToTString()
 }
 
 type lua_TValue struct {
@@ -51,7 +51,7 @@ func (v *TValue) NumberValue() LuaNumber {
 
 func (v *TValue) StringValue() *TString {
 	CheckExp(v.IsString())
-	return v.value.gc.ToString()
+	return v.value.gc.ToTString()
 }
 
 func (v *TValue) UdataValue() *Udata {

@@ -27,6 +27,8 @@ func (s *TString) GetStr() []byte {
 	return s.Bytes
 }
 
+// Fix
+// 对应C函数：`luaS_fix(s)'
 func (s *TString) Fix() {
 	s.marked |= 1 << FIXEDBIT
 }
@@ -55,7 +57,7 @@ func (L *LuaState) sResize(newSize uint64) {
 		p := tb.Hash[i]
 		for p != nil {
 			next := p.Next() // save next
-			h := p.ToString().Hash
+			h := p.ToTString().Hash
 			h1 := LMod(h, newSize) // new position
 			LuaAssert((h % newSize) == LMod(h, newSize))
 			p.SetNext(newHash[h1]) // chain it
@@ -112,7 +114,7 @@ func (L *LuaState) sNewLStr(str []byte) *TString {
 	}
 	o := L.G().StrT.Hash[LMod(h, L.G().StrT.Size)]
 	for ; o != nil; o = o.Next() {
-		ts := o.ToString()
+		ts := o.ToTString()
 		if ts.Len == l && bytes.Compare(str[:l], ts.GetStr()) == 0 {
 			// todo: if (isdead(G(L), o)) changewhite(o);
 			return ts

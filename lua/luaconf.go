@@ -30,3 +30,37 @@ const LUAI_MAXCCALLS = 200
 // CHNAGE it to undefined as soon as your programs use only '...' to
 // access vararg parameters (instead of the old 'arg' table).
 const LUA_COMPAT_VARARG = true
+
+type (
+	LUAI_UINT32 = uint32
+	LUAI_INT32  = int32
+	LUAI_UMEM   = int
+	LUAI_MEM    = uintptr
+)
+
+// LUAI_GCPAUSE defines the default pause between garbage-collector cycles
+// as a percentage.
+// CHANGE it if you want the GC to run faster or slower (higher values
+// mean larger pauses which mean slower collection.) You can also change
+// this value dynamically.
+const LUAI_GCPAUSE = 200 /* 200% (wait memory to double before next GC) */
+
+// LUAI_GCMUL defines the default speed of garbage collection relative to
+// memory allocation as a percentage.
+// CHANGE it if you want to change the granularity of th garbage
+// collection. (Higher values mean coarser collections. 0 represents
+// infinity, where each step performs a full collection.) You can also
+// change this value dynamically.
+const LUAI_GCMUL = 200 /* GC runs 'twice the speed' of memory allocation */
+
+// luai_userstate* allow user-specific actions on threads.
+// CHANGE them if you defined LUAI_EXTREASPACE and need to do something
+// extra when a thread is created/deleted/resumed/yielded.
+var (
+	LUAIUserStateOpen   = func(L *LuaState) {}
+	LUAIUserStateClose  = func(L *LuaState) {}
+	LUAIUserStateThread = func(L *LuaState) {}
+	LUAIUserStateFree   = func(L *LuaState) {}
+	LUAIUserStateResume = func(L *LuaState) {}
+	LUAIUserStateYield  = func(L *LuaState) {}
+)

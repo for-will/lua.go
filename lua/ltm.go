@@ -35,8 +35,23 @@ func (L *LuaState) tGetTMByObj(o *TValue, event TMS) *TValue {
 		mt = L.G().mt[o.Type()]
 	}
 	if mt != nil {
-		return mt.GetByString(L.G().tmname[event])
+		return mt.GetByString(L.G().tmName[event])
 	} else {
 		return LuaObjNil
+	}
+}
+
+// 对应C函数：`void luaT_init (lua_State *L)'
+func (L *LuaState) tInit() {
+	var luaTEventName = []string{ /* ORDER TM*/
+		"__index", "__newindex",
+		"__gc", "__mode", "__eq",
+		"__add", "__sub", "__mul", "__div", "__mod",
+		"__pow", "__unm", "__len", "__lt", "__le",
+		"__concat", "__call",
+	}
+	for i := 0; i < TM_N; i++ {
+		L.G().tmName[i] = L.sNew([]byte(luaTEventName[i]))
+		L.G().tmName[i].Fix() /* never collect these names */
 	}
 }

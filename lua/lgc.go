@@ -2,12 +2,22 @@ package golua
 
 import "log"
 
+/* Possible states of the Garbage Collector */
+const (
+	GCSPause       = 0
+	GCSPropagate   = 1
+	GCSSweepString = 2
+	GCSSweep       = 3
+	GCSFinalize    = 4
+)
+
 // FIXEDBIT bit 5 - object is fixed (should not be collected)
 const (
 	WHITE0BIT = 0
 	WHITE1BIT = 1
 	BLACKBIT  = 2
 	FIXEDBIT  = 5
+	SFIXEDBIT = 6
 	WHITEBITS = 1<<WHITE0BIT | 1<<WHITE1BIT
 )
 
@@ -40,4 +50,10 @@ func isdead(g *GlobalState, v GCObject) bool {
 func (L *LuaState) cCheckGC() {
 	// todo: cCheckGC
 	log.Println("cCheckGC not implemented")
+}
+
+// 对应C函数：`void luaC_freeall (lua_State *L)'
+func (L *LuaState) cFreeAll() {
+	// todo: cFreeAll
+	log.Println("cFreeAll not implemented")
 }

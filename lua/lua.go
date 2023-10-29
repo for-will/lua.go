@@ -41,6 +41,11 @@ type LuaReadFunc func(L *LuaState, ud interface{}) (buf []byte, size int)
 // 对应C：`typedef int (*lua_Writer) (lua_State *L, const void* p, size_t sz, void* ud)'
 type LuaWriteFunc func(L *LuaState, p []byte, sz int, ud interface{})
 
+// LuaAlloc
+// prototype for memory-allocation functions
+// 对应C：`typedef void * (*lua_Alloc) (void *ud, void *ptr, size_t osize, size_t nsize)'
+type LuaAlloc func(ud interface{}, ptr interface{}, osize int, nsize int)
+
 // LuaNumber type of numbers in lua
 type LuaNumber = float64
 
@@ -76,3 +81,23 @@ const (
 	LUA_MASKLINE  = 1 << LUA_HOOKLINE
 	LUA_MASKCOUNT = 1 << LUA_HOOKCOUNT
 )
+
+// Function to be called by the debuger in specific events
+// 对应C类型：`typedef void (*lua_Hook) (lua_State *L, lua_Debug *ar)'
+type LuaHook func(L *LuaState, ar *LuaDebug)
+
+// LuaDebug
+// 对应C结构体：`struct lua_Debug'
+type LuaDebug struct {
+	Event       int
+	Name        string /* (n) */
+	NameWhat    string /* (n) `global', `local', `field', `method' */
+	What        string /* (S) `Lua', `C', `main', `tail' */
+	Source      string /* (S) */
+	CurrentLine int    /* (l) */
+	NUps        int    /* (u) number of upvalues */
+	LineDefined int    /* (S) */
+	ShortSrc    []byte /* (S) */
+	/* private part */
+	iCI int /* active function */
+}
