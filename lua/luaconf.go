@@ -2,6 +2,7 @@ package golua
 
 import (
 	"fmt"
+	"math"
 )
 
 const (
@@ -20,6 +21,41 @@ const LUA_NUMBER_FMT = "%.14g"
 // 对应C函数：`lua_number2str(s,n)'
 func NumberToStr(n LuaNumber) string {
 	return fmt.Sprintf(LUA_NUMBER_FMT, n)
+}
+
+/* The luai_num* macros define the primitive operations over numbers. */
+func luai_numadd(a, b LuaNumber) LuaNumber {
+	return a + b
+}
+func luai_numsub(a, b LuaNumber) LuaNumber {
+	return a - b
+}
+func luai_nummul(a, b LuaNumber) LuaNumber {
+	return a * b
+}
+func luai_numdiv(a, b LuaNumber) LuaNumber {
+	return a / b
+}
+func luai_nummod(a, b LuaNumber) LuaNumber {
+	return a - math.Floor(a/b)*b
+}
+func luai_numpow(a, b LuaNumber) LuaNumber {
+	return math.Pow(a, b)
+}
+func luai_numunm(a LuaNumber) LuaNumber {
+	return -a
+}
+func luai_numeq(a, b LuaNumber) bool {
+	return a == b
+}
+func luai_numlt(a, b LuaNumber) bool {
+	return a < b
+}
+func luai_numle(a, b LuaNumber) bool {
+	return a <= b
+}
+func luai_numisnan(a LuaNumber) bool {
+	return !luai_numeq(a, a)
 }
 
 // LUAI_MAXCCALLS is the maximum depth for nested C calls (short) and

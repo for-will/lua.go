@@ -57,3 +57,15 @@ func (L *LuaState) cFreeAll() {
 	// todo: cFreeAll
 	log.Println("cFreeAll not implemented")
 }
+
+// 对应C函数：` luaC_barrier(L,p,v)'
+func (L *LuaState) cBarrier(p GCObject, v *TValue) {
+	// todo: cBarrier
+	log.Println("cBarrier not implemented")
+}
+
+// 对应C函数：`luaC_barriert(L,t,v)'
+func (L *LuaState) cBarrierT(t *Table, v *TValue) {
+	// todo: cBarrierT
+	log.Println("cBarrierT not implemented")
+}

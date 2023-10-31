@@ -73,3 +73,8 @@ func Test_oPushVfString1(t *testing.T) {
 		})
 	}
 }
+
+func Test_oStr2d(t *testing.T) {
+	var num LuaNumber
+	t.Log(oStr2d("123  \r   \n", &num))
+}

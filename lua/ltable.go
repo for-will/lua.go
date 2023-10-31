@@ -13,6 +13,10 @@ type TKey struct {
 	next *Node
 }
 
+func (k *TKey) GetTVal() *TValue {
+	return &k.TValue
+}
+
 type Node struct {
 	i_val TValue
 	i_key TKey
@@ -163,7 +167,7 @@ func (t *Table) findIndex(L *LuaState, key StkId) int {
 
 		for n != nil { /* check whether `key` is somewhere in the chain */
 			/* key may be dead already, but it is ok to use it in `next` */
-			if n.GetVal().IsEqualTo(key) ||
+			if oRawEqualObj(n.GetVal(), key) ||
 				(n.GetKey().Type() == LUA_TDEADKEY &&
 					key.IsCollectable() &&
 					n.GetKey().GcValue() == key.GcValue()) {
@@ -523,7 +527,7 @@ func (t *Table) Get(key *TValue) *TValue {
 		n := t.MainPosition(key)
 		for n != nil {
 			// check whether `key` is somewhere in the chain
-			if n.GetKey().IsEqualTo(key) {
+			if oRawEqualObj(n.GetKey().GetTVal(), key) {
 				return n.GetVal() // that's it
 			} else {
 				n = n.GetNext()

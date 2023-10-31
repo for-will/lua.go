@@ -16,3 +16,8 @@ func (i *Instruction) Ptr(n int) *Instruction {
 		return (*Instruction)(unsafe.Pointer(p))
 	}
 }
+
+// func DoJump(L *LuaState, pc **Instruction, n int) {
+// 	*pc = (*pc).Ptr(n)
+// 	L.iThreadYield()
+// }

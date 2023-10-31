@@ -1,8 +1,26 @@
 package golua
 
-import "unsafe"
+import (
+	"bytes"
+	"errors"
+	"unsafe"
+)
 
 const MAXTAGLOOP = 100 /* limit for table tag-method chains (to avoid loops) */
+
+// 对应C函数：`const TValue *luaV_tonumber (const TValue *obj, TValue *n)'
+func vToNumber(obj *TValue, n *TValue) *TValue {
+	var num LuaNumber
+	if obj.IsNumber() {
+		return obj
+	}
+	if obj.IsString() && oStr2d(string(obj.StringValue().Bytes), &num) {
+		n.SetNumber(num)
+		return n
+	} else {
+		return nil
+	}
+}
 
 // 对应C函数：`void luaV_concat (lua_State *L, int total, int last)'
 func (L *LuaState) vConcat(total int, last int) {
@@ -43,8 +61,69 @@ func (L *LuaState) vConcat(total int, last int) {
 	}
 }
 
+// 对应C函数：`static void Arith (lua_State *L, StkId ra, const TValue *rb,
+//                   const TValue *rc, TMS op)'
+func arith(L *LuaState, ra StkId, rb, rc *TValue, op TMS) {
+	b := vToNumber(rb, &TValue{})
+	c := vToNumber(rb, &TValue{})
+	if b != nil && c != nil {
+		nb, nc := b.NumberValue(), c.NumberValue()
+		switch op {
+		case TM_ADD:
+			ra.SetNumber(luai_numadd(nb, nc))
+		case TM_SUB:
+			ra.SetNumber(luai_numsub(nb, nc))
+		case TM_MUL:
+			ra.SetNumber(luai_nummul(nb, nc))
+		case TM_DIV:
+			ra.SetNumber(luai_numdiv(nb, nc))
+		case TM_MOD:
+			ra.SetNumber(luai_nummod(nb, nc))
+		case TM_POW:
+			ra.SetNumber(luai_numpow(nb, nc))
+		case TM_UNM:
+			ra.SetNumber(luai_numunm(nb))
+		default:
+			LuaAssert(false)
+		}
+	} else if !callBinTM(L, rb, rc, ra, op) {
+		L.gArithError(rb, rc)
+	}
+}
+
 func toString(L *LuaState, obj StkId) bool {
 	return obj.IsString() || obj.vToString(L)
+}
+
+// 对应C函数：`void luaV_settable (lua_State *L, const TValue *t, TValue *key, StkId val)'
+func (L *LuaState) vSetTable(t *TValue, key *TValue, val StkId) {
+	for loop := 0; loop < MAXTAGLOOP; loop++ {
+		var tm *TValue
+		if t.IsTable() { /* `t' is a table? */
+			h := t.TableValue()
+			oldVal := h.Set(L, key) /* do a primitive set */
+			if !oldVal.IsNil() {
+				oldVal.SetObj(L, val)
+				L.cBarrierT(h, val)
+				return
+			}
+			if tm = FastTM(L, h.metatable, TM_NEWINDEX); tm == nil { /* or no TM? */
+				oldVal.SetObj(L, val)
+				L.cBarrierT(h, val)
+				return
+			}
+			/* else will try the tag method */
+		} else if tm = L.tGetTMByObj(t, TM_NEWINDEX); tm == nil {
+			L.gTypeError(t, "index")
+		}
+
+		if tm.IsFunction() {
+			callTM(L, tm, t, key, val)
+			return
+		}
+		t = tm /* else repeat with `tm' */
+	}
+	L.gRunError("loop in settable")
 }
 
 // 对应C函数：`static int call_binTM (lua_State *L, const TValue *p1, const TValue *p2, StkId res, TMS event)'
@@ -66,6 +145,18 @@ func callTMRes(L *LuaState, res StkId, f *TValue, p1 *TValue, p2 *TValue) {
 	res = restorestack(L, result)
 	L.top--
 	res.SetObj(L, L.Top())
+}
+
+// 对应C函数：`static void callTM (lua_State *L, const TValue *f, const TValue *p1,
+//                    const TValue *p2, const TValue *p3)'
+func callTM(L *LuaState, f, p1, p2, p3 *TValue) {
+	L.AtTop(0).SetObj(L, f)  /* push function */
+	L.AtTop(1).SetObj(L, p1) /* 1st argument */
+	L.AtTop(2).SetObj(L, p2) /* 2nd argument */
+	L.AtTop(3).SetObj(L, p3) /* 3rd argument */
+	L.dCheckStack(4)
+	L.top += 4
+	L.dCall(L.AtTop(-4), 0)
 }
 
 // 对应C函数：`void luaV_gettable (lua_State *L, const TValue *t, TValue *key, StkId val)'
@@ -99,7 +190,7 @@ func (L *LuaState) vGetTable(t *TValue, key *TValue, val StkId) {
 // 对应C函数：`void luaV_execute (lua_State *L, int nexeccalls)'
 func (L *LuaState) vExecute(nExecCalls int) {
 
-reentry: /* entry point */
+	// reentry: /* entry point */
 	LuaAssert(L.CI().IsLua())
 	pc := L.savedPc
 	cl := L.CI().Func().L()
@@ -139,6 +230,10 @@ reentry: /* entry point */
 		KBx = func(i Instruction) *TValue {
 			CheckExp(getBMode(i.GetOpCode()) == OpArgK)
 			return &k[i.GetArgBx()]
+		}
+		DoJump = func(n int) {
+			pc = pc.Ptr(n)
+			L.iThreadYield()
 		}
 	)
 
@@ -189,12 +284,193 @@ reentry: /* entry point */
 			rb := KBx(i)
 			g.SetTable(L, cl.env)
 			LuaAssert(rb.IsString())
-			// Protect
-			L.savedPc = pc
+			L.savedPc = pc // Protect
 			L.vGetTable(&g, rb, ra)
 			base = L.base
 			continue
+		case OP_GETTABLE:
+			L.savedPc = pc // Protect
+			L.vGetTable(RB(i), RKC(i), ra)
+			base = L.base
+			continue
+		case OP_SETGLOBAL:
+			var g TValue
+			g.SetTable(L, cl.env)
+			kbx := KBx(i)
+			LuaAssert(kbx.IsString())
+			L.savedPc = pc
+			L.vSetTable(&g, kbx, ra)
+			continue
+		case OP_SETUPVAL:
+			uv := cl.upVals[i.GetArgB()]
+			uv.v.SetObj(L, ra)
+			L.cBarrier(uv, ra)
+			continue
+		case OP_SETTABLE:
+			L.savedPc = pc // Protect
+			L.vSetTable(ra, RKB(i), RKC(i))
+			base = L.base
+			continue
+		case OP_NEWTABLE:
+			b := i.GetArgB()
+			c := i.GetArgC()
+			ra.SetTable(L, L.hNew(oFb2Int(b), oFb2Int(c)))
+			L.savedPc = pc // Protect
+			L.cCheckGC()
+			base = L.base
+			continue
+		case OP_SELF:
+			var rb = RB(i)
+			ra.Ptr(1).SetObj(L, rb)
+			L.savedPc = pc // Protect
+			L.vGetTable(rb, RKC(i), ra)
+			base = L.base
+		case OP_ADD:
+			var rb = RKB(i)
+			var rc = RKC(i)
+			if rb.IsNumber() && rc.IsNumber() {
+				var nb, nc = rb.NumberValue(), rc.NumberValue()
+				ra.SetNumber(luai_numadd(nb, nc))
+			} else {
+				L.savedPc = pc // Protect
+				arith(L, ra, rb, rc, TM_ADD)
+				base = L.base
+			}
+			continue
+		case OP_SUB:
+			var rb = RKB(i)
+			var rc = RKC(i)
+			if rb.IsNumber() && rc.IsNumber() {
+				var nb, nc = rb.NumberValue(), rc.NumberValue()
+				ra.SetNumber(luai_numsub(nb, nc))
+			} else {
+				L.savedPc = pc // Protect
+				arith(L, ra, rb, rc, TM_SUB)
+				base = L.base
+			}
+			continue
+		case OP_MUL:
+			var rb = RKB(i)
+			var rc = RKC(i)
+			if rb.IsNumber() && rc.IsNumber() {
+				var nb, nc = rb.NumberValue(), rc.NumberValue()
+				ra.SetNumber(luai_nummul(nb, nc))
+			} else {
+				L.savedPc = pc // Protect
+				arith(L, ra, rb, rc, TM_MUL)
+				base = L.base
+			}
+			continue
+		case OP_DIV:
+			var rb = RKB(i)
+			var rc = RKC(i)
+			if rb.IsNumber() && rc.IsNumber() {
+				var nb, nc = rb.NumberValue(), rc.NumberValue()
+				ra.SetNumber(luai_numdiv(nb, nc))
+			} else {
+				L.savedPc = pc // Protect
+				arith(L, ra, rb, rc, TM_DIV)
+				base = L.base
+			}
+			continue
+		case OP_MOD:
+			var rb = RKB(i)
+			var rc = RKC(i)
+			if rb.IsNumber() && rc.IsNumber() {
+				var nb, nc = rb.NumberValue(), rc.NumberValue()
+				ra.SetNumber(luai_nummod(nb, nc))
+			} else {
+				L.savedPc = pc // Protect
+				arith(L, ra, rb, rc, TM_MOD)
+				base = L.base
+			}
+			continue
+		case OP_UNM:
+			var rb = RB(i)
+			if rb.IsNumber() {
+				var nb = rb.NumberValue()
+				ra.SetNumber(luai_numunm(nb))
+			} else {
+				L.savedPc = pc // Protect
+				arith(L, ra, rb, rb, TM_UNM)
+				base = L.base
+			}
+			continue
+		case OP_NOT:
+			var res = RB(i).IsFalse() /* next assignment may chage this value */
+			ra.SetBoolean(res)
+			continue
+		case OP_LEN:
+			var rb = RB(i)
+			switch rb.Type() {
+			case LUA_TTABLE:
+				ra.SetNumber(LuaNumber(rb.TableValue().GetN()))
+			case LUA_TSTRING:
+				ra.SetNumber(LuaNumber(rb.StringValue().Len))
+			default: /* try metamethod */
+				L.savedPc = pc // Protect
+				if !callBinTM(L, rb, LuaObjNil, ra, TM_LEN) {
+					L.gTypeError(rb, "get length of")
+				}
+				base = L.base
+			}
+			continue
+		case OP_CONCAT:
+			var b = i.GetArgB()
+			var c = i.GetArgC()
+			L.savedPc = pc // Protect
+			L.vConcat(c-b+1, c)
+			L.cCheckGC()
+			base = L.base
+			RA(i).SetObj(L, &L.stack[base+b])
+			continue
+		case OP_JMP:
+			DoJump(i.GetArgSBx())
+			continue
+		case OP_EQ:
+			var rb = RKB(i)
+			var rc = RKC(i)
+			L.savedPc = pc // Protect
+			if equalobj(L, rb, rc) == (i.GetArgA() != 0) {
+				DoJump(pc.GetArgSBx())
+			}
+			base = L.base
+			pc = pc.Ptr(1) // pc++
+			continue
+		case OP_LT:
+			L.savedPc = pc // Protect
+			if L.vLessThan(RKB(i), RKC(i)) == (i.GetArgA() != 0) {
+				DoJump(pc.GetArgSBx())
+			}
+			base = L.base
+			pc = pc.Ptr(1) // pc++
+			continue
+		case OP_LE:
+			L.savedPc = pc // Protect
+			if lessequal(L, RKB(i), RKC(i)) == (i.GetArgA() != 0) {
+				DoJump(pc.GetArgSBx())
+			}
+			base = L.base
+			pc = pc.Ptr(1) // pc++
+			continue
+		case OP_TEST:
+			if ra.IsFalse() != (i.GetArgC() != 0) {
+				DoJump(pc.GetArgSBx())
+			}
+			pc = pc.Ptr(1) // pc++
+			continue
+		case OP_TESTSET:
+			var rb = RB(i)
+			if rb.IsFalse() != (i.GetArgC() != 0) {
+				ra.SetObj(L, rb)
+				DoJump(pc.GetArgSBx())
+			}
+			pc = pc.Ptr(1)
+			continue
+		case OP_CALL:
+
 		}
+		_ = RC
 	}
 }
 
@@ -218,4 +494,116 @@ func traceexec(L *LuaState, pc *Instruction) {
 			L.dCallHook(LUA_HOOKLINE, newLine)
 		}
 	}
+}
+
+// 对应C函数：`equalobj(L,o1,o2)'
+func equalobj(L *LuaState, o1, o2 *TValue) bool {
+	return o1.Type() == o2.Type() && vEqualVal(L, o1, o2)
+}
+
+// 对应C函数：`int luaV_equalval (lua_State *L, const TValue *t1, const TValue *t2)'
+func vEqualVal(L *LuaState, t1, t2 *TValue) bool {
+	var tm *TValue
+	LuaAssert(t1.Type() == t2.Type())
+	switch t1.Type() {
+	case LUA_TNIL:
+		return true
+	case LUA_TNUMBER:
+		return luai_numeq(t1.NumberValue(), t2.NumberValue())
+	case LUA_TBOOLEAN:
+		return t1.BooleanValue() == t2.BooleanValue() /* true must be 1 !!*/
+	case LUA_TLIGHTUSERDATA:
+		return t1.PointerValue() == t2.PointerValue()
+	case LUA_TUSERDATA:
+		if t1.UdataValue() == t2.UdataValue() {
+			return true
+		}
+		tm = get_compTM(L, t1.UdataValue().metatable, t1.UdataValue().metatable, TM_EQ)
+		break /* will try TM */
+	case LUA_TTABLE:
+		if t1.TableValue() == t2.TableValue() {
+			return true
+		}
+		tm = get_compTM(L, t1.TableValue().metatable, t2.TableValue().metatable, TM_EQ)
+		break /* will try TM */
+	default:
+		return t1.GcValue() == t2.GcValue()
+	}
+	if tm == nil { /* no TM? */
+		return false
+	}
+	callTMRes(L, L.Top(), tm, t1, t2) /* call TM */
+	return !L.Top().IsFalse()
+}
+
+// 对应C函数：
+// static const TValue *get_compTM (lua_State *L, Table *mt1, Table *mt2,
+//                                  TMS event)
+func get_compTM(L *LuaState, mt1, mt2 *Table, event TMS) *TValue {
+	var tm1 = FastTM(L, mt1, event)
+	if mt1 == nil { /* no metamethod */
+		return nil
+	}
+	if mt1 == mt2 { /* same metatables => same metamethods */
+		return tm1
+	}
+	var tm2 = FastTM(L, mt2, event)
+	if tm2 == nil { /* no metamethod */
+		return nil
+	}
+	if oRawEqualObj(tm1, tm2) { /* same metamethods? */
+		return tm1
+	}
+	return nil
+}
+
+// 对应C函数：`int luaV_lessthan (lua_State *L, const TValue *l, const TValue *r)'
+func (L *LuaState) vLessThan(l *TValue, r *TValue) bool {
+	if l.Type() != r.Type() {
+		return L.gOrderError(l, r)
+	} else if l.IsNumber() {
+		return luai_numlt(l.NumberValue(), r.NumberValue())
+	} else if l.IsString() {
+		return l_strcmp(l.StringValue(), r.StringValue()) < 0
+	} else if res, err := call_orderTM(L, l, r, TM_LT); err == nil {
+		return res
+	}
+	return L.gOrderError(l, r)
+}
+
+// 对应C函数：`static int lessequal (lua_State *L, const TValue *l, const TValue *r)'
+func lessequal(L *LuaState, l *TValue, r *TValue) bool {
+	if l.Type() != r.Type() {
+		return L.gOrderError(l, r)
+	} else if l.IsNumber() {
+		return luai_numle(l.NumberValue(), r.NumberValue())
+	} else if l.IsString() {
+		return l_strcmp(l.StringValue(), r.StringValue()) <= 0
+	} else if res, err := call_orderTM(L, l, r, TM_LE); err == nil { /* first try `le' */
+		return res
+	} else if res, err := call_orderTM(L, r, l, TM_LT); err == nil { /* else try 'lt' */
+		return !res
+	}
+	return L.gOrderError(l, r)
+}
+
+// 对应C函数：`static int l_strcmp (const TString *ls, const TString *rs)'
+func l_strcmp(ls *TString, rs *TString) int {
+	return bytes.Compare(ls.Bytes[:ls.Len], rs.Bytes[:rs.Len])
+}
+
+// 对应C函数：
+// static int call_orderTM (lua_State *L, const TValue *p1, const TValue *p2,
+//                         TMS event)
+func call_orderTM(L *LuaState, p1 *TValue, p2 *TValue, event TMS) (bool, error) {
+	var tm1 = L.tGetTMByObj(p1, event)
+	if tm1.IsNil() { /* no metamethod? */
+		return false, errors.New("no metamethod")
+	}
+	var tm2 = L.tGetTMByObj(p2, event)
+	if !oRawEqualObj(tm1, tm2) { /* different metamethods? */
+		return false, errors.New("different metamethods")
+	}
+	callTMRes(L, L.Top(), tm1, p1, p2)
+	return !L.Top().IsFalse(), nil
 }

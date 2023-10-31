@@ -22,6 +22,12 @@ const (
 	LUA_MINBUFFER = 32  /* minimum size fo string buffer */
 )
 
+// 对应C函数：luai_threadyield(L)
+func (L *LuaState) iThreadYield() {
+	L.Unlock()
+	L.Lock()
+}
+
 func LuaAssert(c bool) {
 	// todo: LuaAssert
 	if !c {

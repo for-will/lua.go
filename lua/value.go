@@ -76,6 +76,12 @@ func (v *TValue) BooleanValue() LuaBoolean {
 	return v.value.b
 }
 
+// IsFalse
+// 对应C函数：`l_isfalse(o)'
+func (v *TValue) IsFalse() bool {
+	return v.IsNil() || (v.IsBoolean() && v.BooleanValue() == false)
+}
+
 func (v *TValue) TypePtr() *ttype {
 	return &v.tt
 }
@@ -170,24 +176,24 @@ func (v *TValue) vToString(L *LuaState) bool {
 	return true
 }
 
-// IsEqualTo 比较两个TValue是否相等
+// oRawEqualObj 比较两个TValue是否相等
 // 对应C函数 `int luaO_rawequalObj (const TValue *t1, const TValue *t2)`
-func (v *TValue) IsEqualTo(t *TValue) bool {
-	if v.Type() != t.Type() {
+func oRawEqualObj(t1 *TValue, t2 *TValue) bool {
+	if t1.Type() != t2.Type() {
 		return false
 	}
-	switch v.Type() {
+	switch t1.Type() {
 	case LUA_TNIL:
 		return true
 	case LUA_TNUMBER:
-		return v.NumberValue() == t.NumberValue()
+		return t1.NumberValue() == t2.NumberValue()
 	case LUA_TBOOLEAN:
-		return v.BooleanValue() == t.BooleanValue()
+		return t1.BooleanValue() == t2.BooleanValue()
 	case LUA_TLIGHTUSERDATA:
-		return v.PointerValue() == t.PointerValue()
+		return t1.PointerValue() == t2.PointerValue()
 	default:
-		LuaAssert(v.IsCollectable())
-		return v.GcValue() == t.GcValue()
+		LuaAssert(t1.IsCollectable())
+		return t1.GcValue() == t2.GcValue()
 	}
 }
 

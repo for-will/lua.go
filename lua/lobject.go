@@ -3,6 +3,8 @@ package golua
 import (
 	"bytes"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -37,6 +39,34 @@ type Valuer interface {
 // 同C `setobj(L,obj1,obj2)`
 func SetObj(L *LuaState, obj1, obj2 *TValue) {
 	obj1.SetObj(L, obj2)
+}
+
+// converts an integer to a "floating point byte", represented as
+// (eeeeexxx), where the real value is (1xxx) * 2^(eeeee - 1) if
+// eeeee != 0 and (xxx) otherwise.
+// 对应C函数：`int luaO_int2fb (unsigned int x)'
+func oInt2Fb(x uint) int {
+	var e = 0 /* expoent */
+	for x >= 16 {
+		x = (x + 1) >> 1
+		e++
+	}
+	if x < 8 {
+		return int(x)
+	} else {
+		return (e+1)<<3 | int(x-8)
+	}
+}
+
+// converts back
+// 对应C函数：`int luaO_fb2int (int x)'
+func oFb2Int(x int) int {
+	var e = (x >> 3) & 31
+	if e == 0 {
+		return x
+	} else {
+		return ((x & 7) + 8) << (e - 1)
+	}
 }
 
 // LuaObjLog2 计算对数
@@ -143,4 +173,24 @@ func (L *LuaState) oPushVfString(format []byte, argv ...interface{}) []byte {
 // 对应C函数：`const char *luaO_pushfstring (lua_State *L, const char *fmt, ...)'
 func (L *LuaState) oPushFString(format string, args ...interface{}) []byte {
 	return L.oPushVfString([]byte(format), args...)
+}
+
+// 对应C函数：`int luaO_str2d (const char *s, lua_Number *result)'
+func oStr2d(s string, result *LuaNumber) (ok bool) {
+	s = strings.TrimRight(s, " \t\n\r")
+	if s[len(s)-1] == 'x' || s[len(s)-1] == 'X' {
+		i, err := strconv.ParseInt(s[:len(s)-1], 16, 64)
+		if err != nil {
+			return false
+		}
+		*result = LuaNumber(i)
+		return true
+	}
+
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return false
+	}
+	*result = v
+	return true
 }
