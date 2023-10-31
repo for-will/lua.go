@@ -210,7 +210,7 @@ func preinit_state(L *LuaState, g *GlobalState) {
 	L.hookMask = 0
 	L.baseHootCount = 0
 	L.allowHook = 1
-	resethookcount(L)
+	ResetHookCount(L)
 	L.openUpval = nil
 	L.sizeCi = 0
 	L.nCCalls = 0
@@ -378,6 +378,12 @@ func (L *LuaState) PushObj(obj *TValue) {
 func (L *LuaState) PushTable(h *Table) {
 	L.Top().SetTable(L, h)
 	L.top++
+}
+
+// DecrHookCount 相当于C语言中的`--L.hookCount'
+func (L *LuaState) DecrHookCount() int {
+	L.hookCount--
+	return L.hookCount
 }
 
 // CallInfo

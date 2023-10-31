@@ -4,8 +4,9 @@ import (
 	"log"
 )
 
+// ResetHookCount
 // 对应C函数：`resethookcount(L)'
-func resethookcount(L *LuaState) {
+func ResetHookCount(L *LuaState) {
 	L.hookCount = L.baseHootCount
 }
 
@@ -28,4 +29,11 @@ func gCheckCode(pt *Proto) int {
 	// todo: gCheckCode
 	log.Println("gCheckCode not implemented")
 	return 0
+}
+
+// 对应C函数：int luaG_checkopenop (Instruction i)
+func gCheckOpenOp(i Instruction) bool {
+	// todo：gCheckOpenOp
+	log.Println("gCheckOpenOp not implemented")
+	return true
 }

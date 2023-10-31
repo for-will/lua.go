@@ -5,7 +5,7 @@ import "unsafe"
 // Instruction 对应C类型`Instruction`
 // type for virtual-machine instructions
 // must be an unsigned with (at least) 4 bytes (see details in lopcodes.h)
-type Instruction int32
+type Instruction uint32
 
 func (i *Instruction) Ptr(n int) *Instruction {
 	if n >= 0 {

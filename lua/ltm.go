@@ -23,6 +23,36 @@ const (
 	TM_N /* number of elements in the enum */
 )
 
+// 对应C函数：`gfasttm(g,et,e)'
+func gFastTM(g *GlobalState, et *Table, e TMS) *TValue {
+	if et == nil {
+		return nil
+	}
+	if et.flags&(1<<lu_byte(e)) != 0 {
+		return nil
+	}
+	return tGetTM(et, e, g.tmName[e])
+}
+
+// FastTM
+// 对应C函数：`fasttm(l,et,e)'
+func FastTM(L *LuaState, mt *Table, e TMS) *TValue {
+	return gFastTM(L.G(), mt, e)
+}
+
+// function to be used with macro "fasttm": optimized for absence of
+// tag methods.
+// 对应C函数：`const TValue *luaT_gettm (Table *events, TMS event, TString *ename)'
+func tGetTM(events *Table, event TMS, ename *TString) *TValue {
+	tm := events.GetByString(ename)
+	LuaAssert(event <= TM_EQ)
+	if tm.IsNil() { /* no tag method? */
+		events.flags |= 1 << event /* cache this fact */
+		return nil
+	}
+	return tm
+}
+
 // 对应C函数：`const TValue *luaT_gettmbyobj (lua_State *L, const TValue *o, TMS event)'
 func (L *LuaState) tGetTMByObj(o *TValue, event TMS) *TValue {
 	var mt *Table
