@@ -2,9 +2,9 @@ package golua
 
 import "unsafe"
 
-// NewLClosure
+// fNewLClosure
 // 对应C函数：`Closure *luaF_newLclosure (lua_State *L, int nelems, Table *e)'
-func NewLClosure(L *LuaState, nelems int, e *Table) *LClosure {
+func (L *LuaState) fNewLClosure(nelems int, e *Table) *LClosure {
 	c := &LClosure{
 		upVals: make([]*UpVal, nelems),
 	}
@@ -15,9 +15,41 @@ func NewLClosure(L *LuaState, nelems int, e *Table) *LClosure {
 	return c
 }
 
-// NewUpVal
+// fFindUpVal
+// 对应C函数：`UpVal *luaF_findupval (lua_State *L, StkId level)'
+func (L *LuaState) fFindUpVal(level StkId) *UpVal {
+	var g = L.G()
+	var pp = &L.openUpval
+	for *pp != nil {
+		var p = (*pp).ToUpval()
+		if !(uintptr(unsafe.Pointer(p.v)) >= uintptr(unsafe.Pointer(level))) {
+			break
+		}
+		if p.v == level { /* found a corresponding up-value? */
+			if isdead(g, p) { /* is it dead? */
+				p.ChangeWhite() /* ressurect it */
+				return p
+			}
+		}
+		pp = &p.next
+	}
+	var uv = &UpVal{} /* not found: create a new one */
+	uv.tt = LUA_TUPVAL
+	uv.marked = g.cWhite()
+	uv.v = level  /* current value lives in the stack */
+	uv.next = *pp /* chain it in the proper position */
+	*pp = uv
+	uv.l.prev = &g.uvHead
+	uv.l.next = g.uvHead.l.next
+	g.uvHead.l.next.l.prev = uv
+	g.uvHead.l.next = uv
+	LuaAssert(uv.l.next.l.prev == uv && uv.l.prev.l.next == uv)
+	return uv
+}
+
+// fNewUpVal
 // 对应C函数：`UpVal *luaF_newupval (lua_State *L)'
-func NewUpVal(L *LuaState) *UpVal {
+func fNewUpVal(L *LuaState) *UpVal {
 	uv := &UpVal{}
 	// todo: luaC_link(L, obj2gco(uv), LUA_TUPVAL)
 	uv.v = &uv.value
@@ -58,7 +90,7 @@ func (L *LuaState) fNewProto() *Proto {
 		lineDefined:     0,
 		lastLineDefined: 0,
 		gcList:          nil,
-		nups:            0,
+		nUps:            0,
 		numParams:       0,
 		isVarArg:        0,
 		maxStackSize:    0,

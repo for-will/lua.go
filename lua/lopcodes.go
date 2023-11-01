@@ -249,7 +249,7 @@ var luaP_opnames = [NUM_OPCODES]string{
 }
 
 var luaP_opmodes = [NUM_OPCODES]lu_byte{
-	/*        T    A     B       C    mode     opcode */
+	/*        T    A     B       C    mode     opcode             */
 	opmode(0, 1, OpArgR, OpArgN, iABC),  /* OP_MOVE          */
 	opmode(0, 1, OpArgK, OpArgN, iABx),  /* OP_LOADK         */
 	opmode(0, 1, OpArgU, OpArgU, iABC),  /* OP_LOADBOOL      */
@@ -293,3 +293,5 @@ var luaP_opmodes = [NUM_OPCODES]lu_byte{
 func opmode(t lu_byte, a, b, c lu_byte, m OpMode) lu_byte {
 	return t<<7 | a<<6 | b<<4 | c<<2 | lu_byte(m)
 }
+
+const LFIELDS_PER_FLUSH = 50 /* number of list items to accumulate before a SETLIST instruction */

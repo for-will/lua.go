@@ -197,7 +197,7 @@ func (S *loadState) LoadFunction(p *TString) *Proto {
 	}
 	f.lineDefined = S.LoadInt()
 	f.lastLineDefined = S.LoadInt()
-	f.nups = S.LoadChar()
+	f.nUps = S.LoadChar()
 	f.numParams = S.LoadChar()
 	f.isVarArg = S.LoadByte()
 	f.maxStackSize = S.LoadByte()

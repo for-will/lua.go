@@ -27,3 +27,18 @@ func TestDoJump(t *testing.T) {
 		DoJump(1)
 	}
 }
+
+func TestBreakSwitch(t *testing.T) {
+	for i := 0; i < 10; i++ {
+		switch i % 2 {
+		case 0:
+			t.Log("***", i)
+			if i > 5 {
+				break
+			}
+			t.Log("===", i)
+		default:
+			t.Log("---", i)
+		}
+	}
+}

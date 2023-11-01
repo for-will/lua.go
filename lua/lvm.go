@@ -62,7 +62,8 @@ func (L *LuaState) vConcat(total int, last int) {
 }
 
 // 对应C函数：`static void Arith (lua_State *L, StkId ra, const TValue *rb,
-//                   const TValue *rc, TMS op)'
+//
+//	const TValue *rc, TMS op)'
 func arith(L *LuaState, ra StkId, rb, rc *TValue, op TMS) {
 	b := vToNumber(rb, &TValue{})
 	c := vToNumber(rb, &TValue{})
@@ -133,7 +134,8 @@ func callBinTM(L *LuaState, p1 *TValue, p2 *TValue, res StkId, event TMS) bool {
 }
 
 // 对应C函数：`static void callTMres (lua_State *L, StkId res, const TValue *f,
-//                        const TValue *p1, const TValue *p2)'
+//
+//	const TValue *p1, const TValue *p2)'
 func callTMRes(L *LuaState, res StkId, f *TValue, p1 *TValue, p2 *TValue) {
 	result := savestack(L, res)
 	L.Top().SetObj(L, f)     /* push function */
@@ -148,7 +150,8 @@ func callTMRes(L *LuaState, res StkId, f *TValue, p1 *TValue, p2 *TValue) {
 }
 
 // 对应C函数：`static void callTM (lua_State *L, const TValue *f, const TValue *p1,
-//                    const TValue *p2, const TValue *p3)'
+//
+//	const TValue *p2, const TValue *p3)'
 func callTM(L *LuaState, f, p1, p2, p3 *TValue) {
 	L.AtTop(0).SetObj(L, f)  /* push function */
 	L.AtTop(1).SetObj(L, p1) /* 1st argument */
@@ -189,13 +192,14 @@ func (L *LuaState) vGetTable(t *TValue, key *TValue, val StkId) {
 
 // 对应C函数：`void luaV_execute (lua_State *L, int nexeccalls)'
 func (L *LuaState) vExecute(nExecCalls int) {
-
-	// reentry: /* entry point */
+reentry: /* entry point */
 	LuaAssert(L.CI().IsLua())
-	pc := L.savedPc
-	cl := L.CI().Func().L()
-	base := L.base
-	k := cl.p.k
+	var (
+		pc   = L.savedPc
+		cl   = L.CI().Func().L()
+		base = L.base
+		k    = cl.p.k
+	)
 
 	var (
 		RA = func(i Instruction) *TValue {
@@ -205,10 +209,10 @@ func (L *LuaState) vExecute(nExecCalls int) {
 			CheckExp(getBMode(i.GetOpCode()) == OpArgR)
 			return &L.stack[base+i.GetArgB()]
 		}
-		RC = func(i Instruction) *TValue {
+		/*	RC = func(i Instruction) *TValue {
 			CheckExp(getCMode(i.GetOpCode()) == OpArgR)
 			return &L.stack[base+i.GetArgC()]
-		}
+		}*/
 		RKB = func(i Instruction) *TValue {
 			CheckExp(getBMode(i.GetArgB()) == OpArgK)
 			B := i.GetArgB()
@@ -239,7 +243,7 @@ func (L *LuaState) vExecute(nExecCalls int) {
 
 	/* main loop of interpreter */
 	for {
-		i := *pc
+		var i = *pc
 		pc = pc.Ptr(1) // pc++
 		if L.hookMask&(LUA_MASKLINE|LUA_MASKCOUNT) != 0 &&
 			(L.DecrHookCount() == 0 || L.hookMask&LUA_MASKLINE != 0) {
@@ -252,6 +256,7 @@ func (L *LuaState) vExecute(nExecCalls int) {
 		}
 		/* warning!! several calls may realloc the stack and invalidate `ra' */
 		ra := RA(i)
+		rai := base + i.GetArgA()
 		LuaAssert(base == L.base && L.base == L.CI().base)
 		LuaAssert(base <= L.top && L.top <= L.stackSize)
 		LuaAssert(L.top == L.CI().top || gCheckOpenOp(i))
@@ -468,9 +473,180 @@ func (L *LuaState) vExecute(nExecCalls int) {
 			pc = pc.Ptr(1)
 			continue
 		case OP_CALL:
+			var b = i.GetArgB()
+			var nResults = i.GetArgC() - 1
+			if b != 0 {
+				L.top = base + i.GetArgA() + b
+			} /* else previous instruction set top */
+			L.savedPc = pc
+			switch L.dPrecall(ra, nResults) {
+			case PCRLUA:
+				nExecCalls++
+				goto reentry /* restart luaV_execute over new Lua function */
+			case PCRC:
+				/* it was a C function (`precall' called it); adjust results */
+				if nResults >= 0 {
+					L.top = L.CI().top
+				}
+				base = L.base
+				continue
+			default:
+				return /* yield */
+			}
+		case OP_TAILCALL:
+			var b = i.GetArgB()
+			if b != 0 {
+				L.top = rai + b
+			} /* else previous instruction set top */
+			L.savedPc = pc
+			LuaAssert(i.GetArgC()-1 == LUA_MULTRET)
+			switch L.dPrecall(ra, LUA_MULTRET) {
+			case PCRLUA:
+				/* tail call: put new frame in place of previous one */
+				var ci = L.baseCi[L.ci-1] /* previous frame */
+				var fn = ci.fn
+				var pfn = L.CI().fn /* previous function index */
+				var pfnIdx = adr2idx(L, L.CI().fn)
+				var aux int
 
+				if L.openUpval != nil {
+					L.fClose(&L.stack[ci.base])
+				}
+				for aux = 0; pfnIdx+aux < L.top; aux++ {
+					fn.Ptr(aux).SetObj(L, pfn.Ptr(aux))
+				}
+				ci.top = adr2idx(L, fn) + aux /* correct top*/
+				L.top = ci.top
+				LuaAssert(L.top == L.base+int(fn.LFuncValue().p.maxStackSize))
+				ci.savedPc = L.savedPc
+				ci.tailCalls++ /* one more call lost */
+				L.ci--         /*remove new frame */
+				goto reentry
+			case PCRC: /* it was a C function (`precall' called it) */
+				base = L.base
+				continue
+			default:
+				return /* yield */
+			}
+		case OP_RETURN:
+			var b = i.GetArgB()
+			if b != 0 {
+				L.top = rai + b - 1
+			}
+			if L.openUpval != nil {
+				L.fClose(&L.stack[base])
+			}
+			L.savedPc = pc
+			b = L.dPoscall(rai)
+			nExecCalls--
+			if nExecCalls == 0 { /* was previous function running `here'? */
+				return /* not: return */
+			} else { /* yes: continue its execution */
+				if b != 0 {
+					L.top = L.CI().top
+				}
+				LuaAssert(L.CI().IsLua())
+				LuaAssert(L.CI().savedPc.Ptr(-1).GetOpCode() == OP_CALL)
+				goto reentry
+			}
+		case OP_FORLOOP:
+			var step = ra.Ptr(2).NumberValue()
+			var idx = luai_numadd(ra.NumberValue(), step) /* increment index */
+			var limit = ra.Ptr(1).NumberValue()
+			if incr := luai_numlt(0, step); (incr && luai_numle(idx, limit)) ||
+				(!incr && luai_numle(limit, idx)) {
+				DoJump(i.GetArgSBx())    /* jump back */
+				ra.SetNumber(idx)        /* update internal index... */
+				ra.Ptr(3).SetNumber(idx) /* ...and external index */
+			}
+			continue
+		case OP_TFORLOOP:
+			var cb = ra.Ptr(3) /* call base */
+			var cbi = rai + 3  /* call base index */
+			cb.Ptr(2).SetObj(L, ra.Ptr(2))
+			cb.Ptr(1).SetObj(L, ra.Ptr(1))
+			cb.SetObj(L, ra)
+			L.top = cbi + 3 /* func. + 2 args (state and index) */
+			L.savedPc = pc  // Protect
+			L.dCall(cb, i.GetArgC())
+			base = L.base
+			L.top = L.CI().top
+			cb = RA(i).Ptr(3) /* previous call may change the stack */
+			if !cb.IsNil() {  /* continue loop? */
+				cb.Ptr(-1).SetObj(L, cb) /* save control variable */
+				DoJump(pc.GetArgSBx())   /* jump back */
+			}
+			pc = pc.Ptr(1)
+			continue
+		case OP_SETLIST:
+			var n = i.GetArgB()
+			var c = i.GetArgC()
+			if n == 0 {
+				n = L.top - rai - 1
+				L.top = L.CI().top
+			}
+			if c == 0 {
+				c = int(*pc)
+				pc = pc.Ptr(1) // pc++
+			}
+			if !ra.IsTable() { // runtime_check
+				break
+			}
+			var h = ra.TableValue()
+			var last = (c-1)*LFIELDS_PER_FLUSH + n
+			if last > h.sizeArray { /* needs more space? */
+				h.ResizeArray(L, last) /* pre-alloc it at once */
+			}
+			for ; n > 0; n-- {
+				var val = ra.Ptr(n)
+				h.SetByNum(L, last).SetObj(L, val)
+				last--
+				L.cBarrierT(h, val)
+			}
+			continue
+		case OP_CLOSE:
+			L.fClose(ra)
+			continue
+		case OP_CLOSURE:
+			var p = cl.p.p[i.GetArgBx()]
+			var nup = p.nUps
+			var ncl = L.fNewLClosure(nup, cl.env)
+			ncl.p = p
+			for j := 0; j < nup; j++ {
+				if pc.GetOpCode() == OP_GETUPVAL {
+					ncl.upVals[j] = cl.upVals[pc.GetArgB()]
+				} else {
+					LuaAssert(pc.GetOpCode() == OP_MOVE)
+					ncl.upVals[j] = L.fFindUpVal(&L.stack[base+pc.GetArgB()])
+				}
+				pc = pc.Ptr(1) // pc++
+			}
+			ra.SetClosure(L, ncl)
+			L.savedPc = pc // Protect
+			L.cCheckGC()
+			base = L.base
+			continue
+		case OP_VARARG:
+			var b = i.GetArgB() - 1
+			var ci = L.CI()
+			var n = ci.base - adr2idx(L, ci.fn) - cl.p.numParams - 1
+			if b == LUA_MULTRET {
+				L.savedPc = pc // Protect
+				L.dCheckStack(n)
+				base = L.base
+				ra = RA(i) /* previous call may change the stack */
+				b = n
+				L.top = rai + n
+			}
+			for j := 0; j < b; j++ {
+				if j < n {
+					ra.Ptr(j).SetObj(L, &L.stack[ci.base-n+j])
+				} else {
+					ra.Ptr(j).SetNil()
+				}
+			}
+			continue
 		}
-		_ = RC
 	}
 }
 
@@ -538,7 +714,8 @@ func vEqualVal(L *LuaState, t1, t2 *TValue) bool {
 
 // 对应C函数：
 // static const TValue *get_compTM (lua_State *L, Table *mt1, Table *mt2,
-//                                  TMS event)
+//
+//	TMS event)
 func get_compTM(L *LuaState, mt1, mt2 *Table, event TMS) *TValue {
 	var tm1 = FastTM(L, mt1, event)
 	if mt1 == nil { /* no metamethod */
@@ -593,8 +770,7 @@ func l_strcmp(ls *TString, rs *TString) int {
 }
 
 // 对应C函数：
-// static int call_orderTM (lua_State *L, const TValue *p1, const TValue *p2,
-//                         TMS event)
+// static int call_orderTM (lua_State *L, const TValue *p1, const TValue *p2, TMS event)
 func call_orderTM(L *LuaState, p1 *TValue, p2 *TValue, event TMS) (bool, error) {
 	var tm1 = L.tGetTMByObj(p1, event)
 	if tm1.IsNil() { /* no metamethod? */

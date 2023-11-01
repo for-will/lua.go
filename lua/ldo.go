@@ -15,7 +15,8 @@ const (
 type PFunc func(L *LuaState, ud interface{})
 
 // 对应C函数：`int luaD_pcall (lua_State *L, Pfunc func, void *u,
-//                ptrdiff_t old_top, ptrdiff_t ef)'
+//
+//	ptrdiff_t old_top, ptrdiff_t ef)'
 func (L *LuaState) dPCall(fun PFunc, u interface{}, oldTopIdx int, ef int) int {
 	var (
 		oldNCCalls    = L.nCCalls
@@ -95,10 +96,10 @@ func parser(L *LuaState, ud interface{}) {
 	} else {
 		tf = L.YParser(p.z, &p.buff, p.name)
 	}
-	cl := NewLClosure(L, tf.nups, L.GlobalTable().TableValue())
+	cl := L.fNewLClosure(tf.nUps, L.GlobalTable().TableValue())
 	cl.p = tf
-	for i := 0; i < tf.nups; i++ {
-		cl.upVals[i] = NewUpVal(L)
+	for i := 0; i < tf.nUps; i++ {
+		cl.upVals[i] = fNewUpVal(L)
 	}
 	L.Top().SetClosure(L, cl)
 	L.IncTop()

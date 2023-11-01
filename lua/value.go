@@ -62,8 +62,18 @@ func (v *TValue) UdataValue() *Udata {
 // ClosureValue
 // 对应C函数：clvalue(o)
 func (v *TValue) ClosureValue() Closure {
-	CheckExp(v.IsString())
+	CheckExp(v.IsFunction())
 	return v.value.gc.ToClosure()
+}
+
+func (v *TValue) LFuncValue() *LClosure {
+	CheckExp(v.IsFunction())
+	return v.value.gc.ToClosure().L()
+}
+
+func (v *TValue) CFuncValue() *CClosure {
+	CheckExp(v.IsFunction())
+	return v.value.gc.ToClosure().C()
 }
 
 func (v *TValue) TableValue() *Table {

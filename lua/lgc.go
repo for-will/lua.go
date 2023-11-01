@@ -39,6 +39,12 @@ func (c *CommonHeader) IsGray() bool {
 	return !c.IsBlack() && !c.IsWhite()
 }
 
+// ChangeWhite
+// 对应C函数：`changewhite(x)'
+func (c *CommonHeader) ChangeWhite() {
+	c.marked ^= WHITEBITS
+}
+
 // 对应C函数：`isdead(g,v)'
 func isdead(g *GlobalState, v GCObject) bool {
 	// todo: isdead
