@@ -181,3 +181,13 @@ func (L *LuaState) Remove(idx int) {
 	L.top--
 	L.Unlock()
 }
+
+// AtPanic
+// 对应C函数：`LUA_API lua_CFunction lua_atpanic (lua_State *L, lua_CFunction panicf)'
+func (L *LuaState) AtPanic(fPanic LuaCFunction) LuaCFunction {
+	L.Lock()
+	var old = L.G().panic
+	L.G().panic = fPanic
+	L.Unlock()
+	return old
+}

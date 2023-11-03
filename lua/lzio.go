@@ -50,6 +50,7 @@ func (z *ZIO) Init(L *LuaState, reader LuaReadFunc, data interface{}) {
 	z.p = 0
 }
 
+// Read
 // 对应C函数：`size_t luaZ_read (ZIO *z, void *b, size_t n)'
 func (z *ZIO) Read(b []byte, n int) int {
 	var pos = 0
@@ -68,6 +69,20 @@ func (z *ZIO) Read(b []byte, n int) int {
 		n -= m
 	}
 	return 0
+}
+
+// GetCh
+// 对应C函数：`zgetc(z)'
+func (z *ZIO) GetCh() int {
+	var n = z.n
+	z.n--
+	if n > 0 {
+		var c = z.buff[z.p]
+		z.p++
+		return int(c)
+	} else {
+		return z.Fill()
+	}
 }
 
 // MBuffer
@@ -109,4 +124,20 @@ func (m *MBuffer) Resize(n int) {
 // 对应C函数：`luaZ_freebuffer(L, buff)'
 func (m *MBuffer) Free() {
 	m.Resize(0)
+}
+
+// Reset
+// 对应C函数：`luaZ_resetbuffer(buff)'
+func (m *MBuffer) Reset() {
+	m.n = 0
+}
+
+// Len
+// 对应C函数：`luaZ_bufflen(buff)'
+func (m *MBuffer) Len() int {
+	return m.n
+}
+
+func (m *MBuffer) string() string {
+	return string(m.buffer[:m.size])
 }

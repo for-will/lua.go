@@ -17,6 +17,8 @@ func ApiCheck(L *LuaState, o bool) {
 
 const LUA_NUMBER_FMT = "%.14g"
 
+const LUA_QS = "'%s'"
+
 // NumberToStr
 // 对应C函数：`lua_number2str(s,n)'
 func NumberToStr(n LuaNumber) string {
@@ -62,10 +64,24 @@ func luai_numisnan(a LuaNumber) bool {
 // syntactical nested non-terminals in a program.
 const LUAI_MAXCCALLS = 200
 
+// LUAI_MAXVARS is the maximum number of local variables per function
+// (must be smaller than 250).
+const LUAI_MAXVARS = 200
+
+// LUAI_MAXUPVALUES is the maximum number of upvalues per function
+// (must be smaller than 250).
+const LUAI_MAXUPVALUES = 60
+
 // LUA_COMPAT_VARARG controls compatibility whith old vararg feature.
 // CHNAGE it to undefined as soon as your programs use only '...' to
 // access vararg parameters (instead of the old 'arg' table).
 const LUA_COMPAT_VARARG = true
+
+// LUA_COMPAT_LSTR controls compatibility with old long string nesting
+// facility.
+// CHANGE it to 2 if you want the old behaviour, or undefine it to turn
+// off the advisory error when nesting [[...]].
+const LUA_COMPAT_LSTR = 1
 
 type (
 	LUAI_UINT32 = uint32

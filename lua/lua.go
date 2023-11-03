@@ -56,9 +56,9 @@ type lua_Interger = uintptr
 
 // ToString
 // 对应C函数：`lua_tostring(L,i)'
-func (L *LuaState) ToString(i int) []byte {
+func (L *LuaState) ToString(i int) string {
 	s, _ := L.ToLString(i)
-	return s
+	return string(s)
 }
 
 //
@@ -82,6 +82,7 @@ const (
 	LUA_MASKCOUNT = 1 << LUA_HOOKCOUNT
 )
 
+// LuaHook
 // Function to be called by the debuger in specific events
 // 对应C类型：`typedef void (*lua_Hook) (lua_State *L, lua_Debug *ar)'
 type LuaHook func(L *LuaState, ar *LuaDebug)
@@ -100,4 +101,10 @@ type LuaDebug struct {
 	ShortSrc    []byte /* (S) */
 	/* private part */
 	iCI int /* active function */
+}
+
+// LuaOpen
+// 对应C函数：`lua_open()'
+func LuaOpen() *LuaState {
+	return LNewState()
 }

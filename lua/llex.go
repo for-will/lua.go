@@ -1,5 +1,10 @@
 package golua
 
+import (
+	"math"
+	"strings"
+)
+
 const (
 	FIRST_RESERVED = 257
 
@@ -65,3 +70,407 @@ func (L *LuaState) xInit() {
 		ts.Reserved = lu_byte(i + 1) /* reserved word */
 	}
 }
+
+// SemInfo
+// 对应C结构：`union SemInfo'
+type SemInfo struct {
+	r  LuaNumber
+	ts *TString
+} /* semantics information */
+
+// Token
+// 对应C结构：`struct Token'
+type Token struct {
+	token   int
+	semInfo SemInfo
+}
+
+// LexState
+// 对应C结构：`struct LexState'
+type LexState struct {
+	current    int        /* current character (charint) */
+	lineNumber int        /* input line counter */
+	lastLine   int        /* line of last token `consumed' */
+	t          Token      /* current token */
+	lookAhead  Token      /* look ahead token */
+	fs         *FuncState /* `FuncState' is private to the parser */
+	L          *LuaState  /* */
+	z          *ZIO       /* input stream */
+	buff       *MBuffer   /* buffer for tokens */
+	source     *TString   /* current source name */
+	decPoint   byte       /* locale decimal point */
+}
+
+func xSetInput(L *LuaState, ls *LexState, z *ZIO, source *TString) {
+	ls.decPoint = '.'
+	ls.L = L
+	ls.lookAhead.token = TK_EOS /* no look-ahead token */
+	ls.z = z
+	ls.fs = nil
+	ls.lineNumber = 1
+	ls.lastLine = 1
+	ls.source = source
+	ls.buff.Resize(LUA_MINBUFFER) /* initialize buffer */
+	ls.next()                     /* read first char */
+}
+
+// 对应C函数：`next(ls)'
+func (ls *LexState) next() {
+	ls.current = ls.z.GetCh()
+}
+
+// 对应C函数：`void luaX_next (LexState *ls)'
+func (ls *LexState) xNext() {
+	ls.lastLine = ls.lineNumber
+	if ls.lookAhead.token != TK_EOS { /* is there a look-ahead token? */
+		ls.t = ls.lookAhead         /* use this one */
+		ls.lookAhead.token = TK_EOS /* and discharge it */
+	} else {
+		ls.t.token = ls.llex(&ls.t.semInfo) /* read next token */
+	}
+}
+
+// 对应C函数：`static int llex (LexState *ls, SemInfo *seminfo)'
+func (ls *LexState) llex(seminfo *SemInfo) int {
+	ls.buff.Reset()
+	for {
+		switch ls.current {
+		case '\n', '\r':
+			ls.incLineNumber()
+			continue
+		case '-':
+			ls.next()
+			if ls.current != '-' {
+				return '-'
+			}
+			/* else is a comment */
+			ls.next()
+			if ls.current == '[' {
+				var sep = ls.skipSep()
+				ls.buff.Reset() /* `skip_sep' may dirty the buffer */
+				if sep >= 0 {
+					ls.readLongString(nil, sep) /* long comment */
+					ls.buff.Reset()
+					continue
+				}
+			}
+			/* else short comment */
+			for !ls.currIsNewline() && ls.current != EOZ {
+				ls.next()
+			}
+			continue
+		case '[':
+			var sep = ls.skipSep()
+			if sep >= 0 {
+				ls.readLongString(seminfo, sep)
+				return TK_STRING
+			} else if sep == -1 {
+				return '['
+			} else {
+				ls.xLexError("invalid long string delimiter", TK_STRING)
+			}
+		case '=':
+			ls.next()
+			if ls.current != '=' {
+				return '='
+			} else {
+				ls.next()
+				return TK_EQ
+			}
+		case '<':
+			ls.next()
+			if ls.current != '=' {
+				return '<'
+			} else {
+				ls.next()
+				return TK_LE
+			}
+		case '>':
+			ls.next()
+			if ls.current != '=' {
+				return '>'
+			} else {
+				ls.next()
+				return TK_GE
+			}
+		case '~':
+			ls.next()
+			if ls.current != '=' {
+				return '~'
+			} else {
+				ls.next()
+				return TK_NE
+			}
+		case '"', '\'':
+			ls.readString(ls.current, seminfo)
+			return TK_STRING
+		case '.':
+			ls.saveAndNext()
+			if ls.checkNext(".") {
+				if ls.checkNext(".") {
+					return TK_DOTS /* ... */
+				} else {
+					return TK_CONCAT /* .. */
+				}
+			} else if !isdigit(ls.current) {
+				return '.'
+			} else {
+				ls.readNumeral(seminfo)
+				return TK_NUMBER
+			}
+		}
+	}
+}
+
+// 对应C函数：`static int check_next (LexState *ls, const char *set)'
+func (ls *LexState) checkNext(set string) bool {
+	if strings.IndexByte(set, byte(ls.current)) == -1 {
+		return false
+	}
+	ls.saveAndNext()
+	return true
+}
+
+/* LUA_NUMBER */
+// 对应C函数：`static void read_numeral (LexState *ls, SemInfo *seminfo)'
+func (ls *LexState) readNumeral(seminfo *SemInfo) {
+	// todo: readNumeral
+}
+
+// 对应C函数：`static void read_long_string (LexState *ls, SemInfo *seminfo, int sep)'
+func (ls *LexState) readLongString(seminfo *SemInfo, sep int) {
+	ls.saveAndNext()        /* skip 2nd `[' */
+	if ls.currIsNewline() { /* string starts with a newline? */
+		ls.incLineNumber() /* skip it */
+	}
+	var cont = 0
+	for {
+		switch ls.current {
+		case EOZ:
+			if seminfo != nil {
+				ls.xLexError("unfinished long string", TK_EOS)
+			} else {
+				ls.xLexError("unfinished long comment", TK_EOS)
+			}
+		case '[': /* LUA_COMPAT_LSTR */
+			if ls.skipSep() == sep {
+				ls.saveAndNext() /* skip 2nd `[' */
+			}
+			cont++
+			if LUA_COMPAT_LSTR == 1 && sep == 0 {
+				ls.xLexError("nesting of [[...]] is deprecated", '[')
+			}
+		case ']':
+			if ls.skipSep() == sep {
+				ls.saveAndNext() /* skip 2nd `]' */
+				if LUA_COMPAT_LSTR == 2 {
+					cont--
+					if sep == 0 && cont >= 0 {
+						break
+					}
+				}
+				goto endloop
+			}
+		case '\n', '\r':
+			ls.save('\n')
+			ls.incLineNumber()
+			if seminfo == nil {
+				ls.buff.Reset() /* avoid wasting space */
+			}
+		default:
+			if seminfo != nil {
+				ls.saveAndNext()
+			} else {
+				ls.next()
+			}
+		}
+	}
+endloop:
+	if seminfo != nil {
+		var buf = ls.buff
+		seminfo.ts = ls.xNewString(buf.buffer[2+sep : buf.Len()-(2+sep)])
+	}
+}
+
+// 对应C函数：`static void read_string (LexState *ls, int del, SemInfo *seminfo)'
+func (ls *LexState) readString(del int, seminfo *SemInfo) {
+	ls.saveAndNext()
+	for ls.current != del {
+		switch ls.current {
+		case EOZ:
+			ls.xLexError("unfinished string", TK_EOS)
+		case '\n', '\r':
+			ls.xLexError("unfinished string", TK_STRING)
+		case '\\':
+			ls.next() /* do not save the '\' */
+			var c int
+			switch ls.current {
+			case 'a':
+				c = '\a'
+			case 'b':
+				c = '\b'
+			case 'f':
+				c = '\f'
+			case 'n':
+				c = '\n'
+			case 'r':
+				c = '\r'
+			case 't':
+				c = '\t'
+			case 'v':
+				c = '\v'
+			case '\n', '\r':
+				ls.save('\n')
+				ls.incLineNumber()
+				continue
+			case EOZ:
+				continue /* will raise an error next loop */
+			default:
+				if !isdigit(ls.current) {
+					ls.saveAndNext() /* handles \\, \", \', and \? */
+				} else { /* \xxx */
+					c = 0
+					for i := 0; i < 3 && isdigit(ls.current); i++ {
+						c = 10*c + (ls.current - '0')
+						ls.next()
+					}
+					if c > UCHAR_MAX {
+						ls.xLexError("escape sequence too large", TK_STRING)
+					}
+					ls.save(c)
+				}
+				continue
+			}
+			ls.save(c)
+			ls.next()
+			continue
+		default:
+			ls.saveAndNext()
+		}
+	}
+	ls.saveAndNext() /* skip delimiter */
+	var buf = ls.buff
+	seminfo.ts = ls.xNewString(buf.buffer[1 : buf.Len()-1])
+}
+
+// 对应C函数：`TString *luaX_newstring (LexState *ls, const char *str, size_t l)'
+func (ls *LexState) xNewString(str []byte) *TString {
+	var L = ls.L
+	var ts = L.sNewLStr(str)
+	var o = ls.fs.h.SetByStr(L, ts) /* entry for `str' */
+	if o.IsNil() {
+		o.SetBoolean(true) /* make sure `str' will not be collected */
+	}
+	return ts
+}
+
+// 对应C函数：`static void inclinenumber (LexState *ls) '
+func (ls *LexState) incLineNumber() {
+	var old = ls.current
+	LuaAssert(ls.currIsNewline())
+	ls.next()
+	if ls.currIsNewline() && ls.current != old {
+		ls.next() /* skip '\n' or '\r' */
+	}
+	ls.lineNumber++
+	if ls.lineNumber >= MAX_INT {
+		ls.xSyntaxError("chunk has too many lines")
+	}
+}
+
+// 对应C函数：`currIsNewline(ls)'
+func (ls *LexState) currIsNewline() bool {
+	return ls.current == '\n' || ls.current == '\r'
+}
+
+// 对应C函数：`void luaX_syntaxerror (LexState *ls, const char *msg)'
+func (ls *LexState) xSyntaxError(msg string) {
+	ls.xLexError(msg, ls.t.token)
+}
+
+// 对应C函数：`void luaX_lexerror (LexState *ls, const char *msg, int token)'
+func (ls *LexState) xLexError(msg string, token int) {
+	const MAXSRC = 80
+	var buff = make([]byte, 80)
+	oChunkId(buff, string(ls.source.Bytes), MAXSRC)
+	msg2 := ls.L.oPushFString("%s:%d: %s", buff, ls.lineNumber, msg)
+	if token != 0 {
+		ls.L.oPushFString("%s near "+LUA_QS, msg2, ls.txtToken(token))
+	}
+	ls.L.dThrow(LUA_ERRSYNTAX)
+}
+
+// 对应C函数：`static const char *txtToken (LexState *ls, int token)'
+func (ls *LexState) txtToken(token int) string {
+	switch token {
+	case TK_NAME, TK_STRING, TK_NUMBER:
+		// ls.save(0)
+		// return string(ls.buff.buffer)
+		return ls.buff.string()
+	default:
+		return ls.xToken2str(token)
+	}
+}
+
+// 对应C函数：`const char *luaX_token2str (LexState *ls, int token)'
+func (ls *LexState) xToken2str(token int) string {
+	if token < FIRST_RESERVED {
+		LuaAssert(token == int(uint8(token)))
+		if iscntrl(token) {
+			return string(ls.L.oPushFString("char(%d)", token))
+		} else {
+			return string(ls.L.oPushFString("%c", byte(token)))
+		}
+	} else {
+		return luaXTokens[token-FIRST_RESERVED]
+	}
+}
+
+// 对应C函数：`static void save (LexState *ls, int c)'
+func (ls *LexState) save(c int) {
+	var b = ls.buff
+	if b.n+1 > b.size {
+		if b.size > int(MAX_SIZET/2) {
+			ls.xLexError("lexical element too long", 0)
+		}
+		var newSize = b.size * 2
+		b.Resize(newSize)
+	}
+	b.buffer[b.n] = byte(c)
+	b.n++
+}
+
+// 对应C函数：`save_and_next(ls)'
+func (ls *LexState) saveAndNext() {
+	ls.save(ls.current)
+	ls.next()
+}
+
+// 对应C函数：`static int skip_sep (LexState *ls)'
+func (ls *LexState) skipSep() int {
+	var count = 0
+	var s = ls.current
+	LuaAssert(s == '[' || s == ']')
+	ls.saveAndNext()
+	for ls.current == '=' {
+		ls.saveAndNext()
+		count++
+	}
+	if ls.current == s {
+		return count
+	} else {
+		return -count - 1
+	}
+}
+
+// ----------------------------------------------------------------------------
+
+func iscntrl(c int) bool {
+	return c <= 0x1f || c == 0x7f
+}
+
+func isdigit(c int) bool {
+	return c >= '0' && c <= '9'
+}
+
+const UCHAR_MAX = math.MaxUint8

@@ -194,3 +194,41 @@ func oStr2d(s string, result *LuaNumber) (ok bool) {
 	*result = v
 	return true
 }
+
+// 对应C函数：`void luaO_chunkid (char *out, const char *source, size_t bufflen)'
+func oChunkId(out []byte, source string, bufflen int) {
+	if source[0] == '=' {
+		copy(out, source[1:]) /* remove first char*/
+		// out[len(out)-1] = 0   /* ensures null termination */
+	} else { /* out = "source", or "...source" */
+		if source[0] == '@' {
+			source = source[1:] /* skip the `@' */
+			bufflen -= len(" '...' ")
+			var l = len(source)
+			if l > bufflen {
+				source = source[l-bufflen:] /* get last part of file name */
+				copy(out, "...")
+				out = out[3:]
+			}
+			copy(out, source)
+		} else { /* out = [string "string"] */
+			var l = strings.IndexAny(source, "\n\r") /* stop at first newline */
+			if l < 0 {
+				l = len(source)
+			}
+			bufflen -= len(" [string \"...\"] ")
+			out = out[:0]
+			out = append(out, []byte("[string \"")...)
+			if l > bufflen {
+				l = bufflen
+			}
+			if l != len(source) { /* must truncate? */
+				out = append(out, source[:l]...)
+				out = append(out, "..."...)
+			} else {
+				out = append(out, source...)
+			}
+			out = append(out, "\"]"...)
+		}
+	}
+}

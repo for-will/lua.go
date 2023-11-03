@@ -1,8 +1,53 @@
 package golua
 
 import (
+	"fmt"
 	"os"
 )
+
+// LDoString
+// 对应C函数：`luaL_dostring(L, s)'
+func (L *LuaState) LDoString(s string) int {
+	if r := L.LLoadString(s); r != 0 {
+		return r
+	}
+	return L.PCall(0, LUA_MULTRET, 0)
+}
+
+// LLoadString
+// 对应C函数：`LUALIB_API int (luaL_loadstring) (lua_State *L, const char *s)'
+func (L *LuaState) LLoadString(s string) int {
+	return L.LLoadBuffer([]byte(s), s)
+}
+
+// LLoadBuffer
+// 对应C函数：
+// `LUALIB_API int luaL_loadbuffer (lua_State *L, const char *buff, size_t size, const char *name)'
+func (L *LuaState) LLoadBuffer(buff []byte, name string) int {
+	var ls = &loadS{
+		s:    buff,
+		size: len(buff),
+	}
+	return L.Load(getS, ls, []byte(name))
+}
+
+// 对应C结构：`struct LoadS'
+type loadS struct {
+	s    []byte
+	size int
+}
+
+// 对应C函数：`static const char *getS (lua_State *L, void *ud, size_t *size)'
+func getS(L *LuaState, ud interface{}) (buf []byte, size int) {
+	var ls = ud.(*loadS)
+	_ = L
+	if ls.size == 0 {
+		return nil, 0
+	}
+	size = ls.size
+	ls.size = 0
+	return ls.s, size
+}
 
 // LDoFile
 // 对应C函数：`luaL_dofile(L, fn)'
@@ -53,7 +98,7 @@ func (L *LuaState) LLoadFile(filename []byte) int {
 		lf.extraLine = 0
 	}
 	lf.f.ungetc(c)
-	status := L.Load(getF, &lf, L.ToString(-1))
+	status := L.Load(getF, &lf, []byte(L.ToString(-1)))
 	readStatus := lf.f.ferror()
 	if len(filename) != 0 {
 		lf.f.fclose() /* close file (even in case of errors) */
@@ -100,4 +145,25 @@ func errFile(L *LuaState, what string, fnameIndex int, err error) int {
 	L.PushFString("cannot %s %s: %s", what, filename, err.Error())
 	L.Remove(fnameIndex)
 	return LUA_ERRFILE
+}
+
+// LNewState
+// 对应C函数：`LUALIB_API lua_State *luaL_newstate (void)'
+func LNewState() *LuaState {
+	var l_alloc = func(ud interface{}, ptr interface{}, osize int, nsize int) {
+
+	} /* 对应C函数：`static void *l_alloc (void *ud, void *ptr, size_t osize, size_t nsize) */
+
+	var _panic = func(L *LuaState) int {
+		_ = L /* to avoid warnings */
+		fmt.Fprintf(os.Stderr, "PANIC: unprotected error in call to Lua API (%s)\n",
+			L.ToString(-1))
+		return 0
+	} /* 对应C函数：`static int panic (lua_State *L)' */
+
+	var L = NewState(l_alloc, nil)
+	if L != nil {
+		L.AtPanic(_panic)
+	}
+	return L
 }
