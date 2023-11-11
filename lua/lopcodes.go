@@ -45,6 +45,10 @@ const (
 const (
 	MAXARG_Bx  = 1<<SIZE_Bx - 1
 	MAXARG_sBx = MAXARG_Bx >> 1 /* `sBx' is signed */
+
+	MAXARG_A = 1<<SIZE_A - 1
+	MAXARG_B = 1<<SIZE_B - 1
+	MAXARG_C = 1<<SIZE_C - 1
 )
 
 // MASK1
@@ -73,10 +77,24 @@ func (i *Instruction) GetArgA() int {
 	return int(*i >> POS_A & MASK1(SIZE_A, 0))
 }
 
+// SetArgA
+// 对应C函数：`SETARG_A(i,u)'
+func (i *Instruction) SetArgA(a int) {
+	*i = (*i & MASK0(SIZE_A, POS_A)) |
+		((Instruction(a) << POS_A) & MASK1(SIZE_A, POS_A))
+}
+
 // GetArgB
 // 对应C函数：`GETARG_B(i)'
 func (i *Instruction) GetArgB() int {
 	return int(*i >> POS_B & MASK1(SIZE_B, 0))
+}
+
+// SetArgB
+// 对应C函数：`SETARG_B(i,b)'
+func (i *Instruction) SetArgB(b int) {
+	*i = (*i & MASK0(SIZE_B, POS_B)) |
+		((Instruction(b) << POS_Bx) & MASK1(SIZE_B, POS_B))
 }
 
 // GetArgC
@@ -85,16 +103,49 @@ func (i *Instruction) GetArgC() int {
 	return int(*i >> POS_C & MASK1(SIZE_B, 0))
 }
 
+// SetArgC
+// 对应C函数：`SETARG_C(i,b)'
+func (i *Instruction) SetArgC(c int) {
+	*i = (*i & MASK0(SIZE_C, POS_C)) |
+		((Instruction(c) << POS_C) & MASK1(SIZE_C, POS_C))
+}
+
 // GetArgBx
 // 对应C函数：`GETARG_Bx(i)'
 func (i *Instruction) GetArgBx() int {
 	return int(*i >> POS_Bx & MASK1(SIZE_Bx, 0))
 }
 
+// SetArgBx
+// 对应C函数：`SETARG_Bx(i,b)'
+func (i *Instruction) SetArgBx(b int) {
+	*i = (*i & MASK0(SIZE_Bx, POS_Bx)) |
+		((Instruction(b) << POS_Bx) & MASK1(SIZE_Bx, POS_Bx))
+}
+
 // GetArgSBx
 // 对应C函数：`GETARG_sBx(i)'
 func (i *Instruction) GetArgSBx() int {
 	return i.GetArgBx() - MAXARG_sBx
+}
+
+// SetArgSBx
+// 对应C函数：`SETARG_sBx(i,b)'
+func (i *Instruction) SetArgSBx(b int) {
+	i.SetArgBx(b + MAXARG_sBx)
+}
+
+// CreateABC
+// 对应C函数：`CREATE_ABC(o,a,b,c)'
+func CreateABC(o OpCode, a int, b int, c int) Instruction {
+	return Instruction(o)<<POS_OP | Instruction(a)<<POS_A |
+		Instruction(b)<<POS_B | Instruction(c)<<POS_C
+}
+
+// CreateABx
+// 对应C函数：`CREATE_ABx(o,a,bc)'
+func CreateABx(o OpCode, a int, bc int) Instruction {
+	return Instruction(o)<<POS_OP | Instruction(a)<<POS_A | Instruction(bc)<<POS_Bx
 }
 
 /* Macros to operate RK indices */
@@ -117,9 +168,21 @@ func INDEXK(r int) int {
 	return r & ^BITRK
 }
 
-/* grep "ORDER OP" if you change these enums */
+// RKASK
+// code a constant index as a RK value
+// 对应C函数：`RKASK(x)'
+func RKASK(x int) int {
+	return x | BITRK
+}
+
+const NO_REG = MAXARG_A /* invalid register that fits in 8 bits */
+
 type OpCode = int
 
+// R(x) - register
+// Kst(x) - constant (in constant table)
+// RK(x) == if ISK(x) then Kst(INDEXK(x)) else R(x)
+/* grep "ORDER OP" if you change these enums */
 const (
 	OP_MOVE     OpCode = iota /* A B    R(A) := R(B)                 */
 	OP_LOADK                  /* A Bx   R(A) := Kst(Bx)              */

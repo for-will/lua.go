@@ -50,3 +50,10 @@ func (L *LuaState) gOrderError(p1 *TValue, p2 *TValue) bool {
 	log.Println("gOrderError not implemented")
 	return false
 }
+
+// 对应C函数：`int luaG_checkcode (const Proto *pt)'
+func (p *Proto) gCheckCode() bool {
+	// todo: gCheckCode
+	log.Println("gCheckCode not implemented")
+	return true
+}

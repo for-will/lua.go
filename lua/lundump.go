@@ -200,7 +200,7 @@ func (S *loadState) LoadFunction(p *TString) *Proto {
 	f.nUps = S.LoadChar()
 	f.numParams = S.LoadChar()
 	f.isVarArg = S.LoadByte()
-	f.maxStackSize = S.LoadByte()
+	f.maxStackSize = int(S.LoadByte())
 	S.LoadCode(f)
 	S.LoadConstants(f)
 	S.LoadDebug(f)

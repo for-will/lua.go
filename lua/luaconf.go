@@ -116,3 +116,5 @@ var (
 	LUAIUserStateResume = func(L *LuaState) {}
 	LUAIUserStateYield  = func(L *LuaState) {}
 )
+
+const SHRT_MAX = math.MaxInt16

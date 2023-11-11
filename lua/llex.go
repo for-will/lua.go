@@ -3,6 +3,7 @@ package golua
 import (
 	"math"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -218,6 +219,33 @@ func (ls *LexState) llex(seminfo *SemInfo) int {
 				ls.readNumeral(seminfo)
 				return TK_NUMBER
 			}
+		case EOZ:
+			return TK_EOS
+		default:
+			if isspace(ls.current) {
+				LuaAssert(!ls.currIsNewline())
+				ls.next()
+				continue
+			} else if isdigit(ls.current) {
+				ls.readNumeral(seminfo)
+				return TK_NUMBER
+			} else if isalpha(ls.current) || ls.current == '_' {
+				/* identifier or reserved word */
+				for isalnum(ls.current) || ls.current == '_' {
+					ls.saveAndNext()
+				}
+				var ts = ls.xNewString(ls.buff.buffer)
+				if ts.Reserved > 0 { /* reserved word? */
+					return int(ts.Reserved-1) + FIRST_RESERVED
+				} else {
+					seminfo.ts = ts
+					return TK_NAME
+				}
+			} else {
+				var c = ls.current
+				ls.next()
+				return c /* single-char tokens (+ - / ...) */
+			}
 		}
 	}
 }
@@ -234,7 +262,49 @@ func (ls *LexState) checkNext(set string) bool {
 /* LUA_NUMBER */
 // 对应C函数：`static void read_numeral (LexState *ls, SemInfo *seminfo)'
 func (ls *LexState) readNumeral(seminfo *SemInfo) {
-	// todo: readNumeral
+	LuaAssert(isdigit(ls.current))
+	for isdigit(ls.current) || ls.current == '.' {
+		ls.saveAndNext()
+	}
+	if ls.checkNext("Ee") { /* `E'? */
+		ls.checkNext("+-") /* optional exponent sign */
+	}
+	for isalnum(ls.current) || ls.current == '_' {
+		ls.saveAndNext()
+	}
+	// ls.save(0)
+	ls.buffReplace('.', ls.decPoint)           /* follow locale for decimal point */
+	if !oStr2d(ls.buff.string(), &seminfo.r) { /* format error? */
+		ls.tryDecPoint(seminfo) /* try to update decimal point separator */
+	}
+}
+
+// 对应C函数：`static void buffreplace (LexState *ls, char from, char to)'
+func (ls *LexState) buffReplace(from byte, to byte) {
+	var n = ls.buff.Len()
+	var p = ls.buff.buffer
+	for i := 0; i < n; i++ {
+		if p[i] == from {
+			p[i] = to
+		}
+	}
+}
+
+// 对应C函数：`static void trydecpoint (LexState *ls, SemInfo *seminfo)'
+func (ls *LexState) tryDecPoint(seminfo *SemInfo) {
+	/* format error: try to update decimal point separator */
+	var old = ls.decPoint
+	if cv := localeconv(); cv != nil {
+		ls.decPoint = cv.decimal_point[0]
+	} else {
+		ls.decPoint = '.'
+	}
+	ls.buffReplace(old, ls.decPoint) /* try update decimal separator */
+	if !oStr2d(ls.buff.string(), &seminfo.r) {
+		/* format error with correct decimal point: no more options */
+		ls.buffReplace(ls.decPoint, '.') /* undo change (for error message) */
+		ls.xLexError("malformed number", TK_NUMBER)
+	}
 }
 
 // 对应C函数：`static void read_long_string (LexState *ls, SemInfo *seminfo, int sep)'
@@ -463,14 +533,37 @@ func (ls *LexState) skipSep() int {
 	}
 }
 
+// 对应C函数：`void luaX_lookahead (LexState *ls)'
+func (ls *LexState) xLookAhead() {
+	LuaAssert(ls.lookAhead.token == TK_EOS)
+	ls.lookAhead.token = ls.llex(&ls.lookAhead.semInfo)
+}
+
 // ----------------------------------------------------------------------------
 
 func iscntrl(c int) bool {
-	return c <= 0x1f || c == 0x7f
+	return unicode.IsControl(rune(c))
 }
 
 func isdigit(c int) bool {
-	return c >= '0' && c <= '9'
+	return unicode.IsDigit(rune(c))
+}
+
+func isalpha(c int) bool {
+	return unicode.IsLetter(rune(c))
+}
+
+func isalnum(c int) bool {
+	var r = rune(c)
+	return unicode.IsDigit(r) || unicode.IsLetter(r)
+}
+
+func isspace(c int) bool {
+	return unicode.IsSpace(rune(c))
+}
+
+func localeconv() *struct{ decimal_point string } {
+	return nil
 }
 
 const UCHAR_MAX = math.MaxUint8

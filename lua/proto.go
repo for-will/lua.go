@@ -25,19 +25,19 @@ type Proto struct {
 	nUps            int           /* number of up-values */
 	numParams       int
 	isVarArg        lu_byte
-	maxStackSize    lu_byte
+	maxStackSize    int
 }
 
 // 对应C函数：`pcRel(pc, p)'
-func (P *Proto) pcRel(pc *Instruction) int {
-	n := uintptr(unsafe.Pointer(pc)) - uintptr(unsafe.Pointer(&P.code[0]))
+func (p *Proto) pcRel(pc *Instruction) int {
+	n := uintptr(unsafe.Pointer(pc)) - uintptr(unsafe.Pointer(&p.code[0]))
 	return int(n/unsafe.Sizeof(Instruction(0))) - 1 // 为什么要-1？
 }
 
 // 对应C函数：`getline(f,pc)'
-func (P *Proto) getLine(pc int) int {
-	if P.lineInfo != nil {
-		return P.lineInfo[pc]
+func (p *Proto) getLine(pc int) int {
+	if p.lineInfo != nil {
+		return p.lineInfo[pc]
 	}
 	return 0
 }

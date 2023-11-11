@@ -139,5 +139,5 @@ func (m *MBuffer) Len() int {
 }
 
 func (m *MBuffer) string() string {
-	return string(m.buffer[:m.size])
+	return string(m.buffer[:m.n])
 }
