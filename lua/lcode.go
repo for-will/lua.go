@@ -818,3 +818,35 @@ func (fs *FuncState) codeComp(op OpCode, cond int, e1 *expdesc, e2 *expdesc) {
 	e1.s.info = fs.condJump(op, cond, o1, o2)
 	e1.k = VJMP
 }
+
+// 对应C函数：`void luaK_patchlist (FuncState *fs, int list, int target)'
+func (fs *FuncState) kPatchList(list int, target int) {
+	if target == fs.pc {
+		fs.kPatchToHere(list)
+	} else {
+		LuaAssert(target < fs.pc)
+		fs.patchListAux(list, target, NO_REG, target)
+	}
+}
+
+// 对应C函数：`void luaK_storevar (FuncState *fs, expdesc *var, expdesc *ex)'
+func (fs *FuncState) kStoreVar(v *expdesc, ex *expdesc) {
+	switch v.k {
+	case VLOCAL:
+		fs.freeExp(ex)
+		fs.exp2reg(ex, v.s.info)
+		return
+	case VUPVAL:
+		var e = fs.kExp2anyReg(ex)
+		fs.kCodeABC(OP_SETUPVAL, e, v.s.info, 0)
+	case VGLOBAL:
+		var e = fs.kExp2anyReg(ex)
+		fs.kCodeABx(OP_SETGLOBAL, e, v.s.info)
+	case VINDEXED:
+		var e = fs.kExp2RK(ex)
+		fs.kCodeABC(OP_SETTABLE, v.s.info, v.s.aux, e)
+	default:
+		LuaAssert(false) /* invalid var kind to store */
+	}
+	fs.freeExp(ex)
+}

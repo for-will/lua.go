@@ -79,8 +79,12 @@ func (L *LuaState) YParser(z *ZIO, buff *MBuffer, name []byte) *Proto {
 	funcState.f.isVarArg = VARARG_ISVARARG /* main func. is always vararg */
 	lexState.xNext()                       /* read first token */
 	lexState.chunk()
-
-	return nil
+	lexState.check(TK_EOS)
+	lexState.closeFunc()
+	LuaAssert(funcState.prev == nil)
+	LuaAssert(funcState.f.nUps == 0)
+	LuaAssert(lexState.fs == nil)
+	return funcState.f
 }
 
 // 对应C函数：`static void openFunc (LexState *ls, FuncState *fs)'
@@ -171,7 +175,12 @@ func (ls *LexState) chunk() {
 	ls.enterLevel()
 	for !isLast && !blockFollow(ls.t.token) {
 		isLast = ls.statement()
+		ls.testNext(';')
+		LuaAssert(ls.fs.f.maxStackSize >= ls.fs.freeReg &&
+			ls.fs.freeReg >= ls.fs.nActVar)
+		ls.fs.freeReg = ls.fs.nActVar /* free registers */
 	}
+	ls.leaveLevel()
 }
 
 // 对应C函数：`static void enterlevel (LexState *ls)'
@@ -198,17 +207,47 @@ func blockFollow(token int) bool {
 }
 
 // 对应C函数：`static int statement (LexState *ls)'
-func (ls *LexState) statement() bool {
+func (ls *LexState) statement() (lastStat bool) {
 	var line = ls.lineNumber /* may be needed for error messages */
 	switch ls.t.token {
 	case TK_IF: /* stat -> ifstat */
 		ls.ifStat(line)
 		return false
 	case TK_WHILE: /* stat -> whilestat */
-		// ls.whileStat(line)
+		ls.whileStat(line)
 		return false
+	case TK_DO: /* stat -> DO block END */
+		ls.xNext() /* skip DO */
+		ls.block()
+		ls.checkMatch(TK_END, TK_DO, line)
+		return false
+	case TK_FOR: /* stat -> forstat */
+		ls.forStat(line)
+		return false
+	case TK_REPEAT: /* stat -> repreatstat */
+		ls.repeatStat(line)
+		return false
+	case TK_FUNCTION:
+		ls.funcStat(line) /* stat -> funcstat */
+		return false
+	case TK_LOCAL: /* stat -> localstat */
+		ls.xNext()                    /* skip LOCAL */
+		if ls.testNext(TK_FUNCTION) { /* local function? */
+			ls.localFunc()
+		} else {
+			ls.localStat()
+		}
+		return false
+	case TK_RETURN: /* stat -> retstat */
+		ls.retStat()
+		return true /* must be last statement */
+	case TK_BREAK: /* stat -> breakstat */
+		ls.xNext() /* skip BREAK */
+		ls.breakStat()
+		return true /* must be last statement */
 	default:
-		return false
+		ls.exprStat()
+		return false /* to avoid warnings */
 	}
 }
 
@@ -503,7 +542,7 @@ func (fs *FuncState) lastListField(cc *ConsControl) {
 	if cc.tostore == 0 {
 		return
 	}
-	if hasMultRet(cc.v.k) {
+	if hasMultiRet(cc.v.k) {
 		fs.kSetMultRet(&cc.v)
 		fs.kSetList(cc.t.s.info, cc.na, LUA_MULTRET)
 		cc.na-- /* do not count last expression (unknown number of elements */
@@ -598,7 +637,7 @@ func (ls *LexState) checkMatch(what int, who int, where int) {
 }
 
 // 对应C函数：`hasmultret(k)'
-func hasMultRet(k expkind) bool {
+func hasMultiRet(k expkind) bool {
 	return k == VCALL || k == VVARGARG
 }
 
@@ -651,11 +690,11 @@ func (ls *LexState) registerLocalVar(varName *TString) int {
 }
 
 // 对应C函数：`static void adjustlocalvars (LexState *ls, int nvars)'
-func (ls *LexState) adjustLocalVars(nvars int) {
+func (ls *LexState) adjustLocalVars(nVars int) {
 	var fs = ls.fs
-	fs.nActVar = fs.nActVar + nvars
-	for ; nvars > 0; nvars-- {
-		fs.getLocVar(fs.nActVar - nvars).startPc = fs.pc
+	fs.nActVar = fs.nActVar + nVars
+	for ; nVars > 0; nVars-- {
+		fs.getLocVar(fs.nActVar - nVars).startPc = fs.pc
 	}
 }
 
@@ -891,7 +930,7 @@ func (ls *LexState) funcArgs(f *expdesc) {
 	LuaAssert(f.k == VNONRELOC)
 	var base = f.s.info /* base register for call */
 	var nParams int
-	if hasMultRet(args.k) {
+	if hasMultiRet(args.k) {
 		nParams = LUA_MULTRET /* open call */
 	} else {
 		if args.k != VVOID {
@@ -952,4 +991,372 @@ func (fs *FuncState) leaveBlock() {
 	LuaAssert(bl.nActVar == fs.nActVar)
 	fs.freeReg = fs.nActVar /* free registers */
 	fs.kPatchToHere(bl.breakList)
+}
+
+// 对应C函数：`static void whilestat (LexState *ls, int line)'
+func (ls *LexState) whileStat(line int) {
+	/* whilestat -> WHILE cond DO block END */
+	var fs = ls.fs
+	var bl = &BlockCnt{}
+	ls.xNext() /* skip WHILE */
+	var whileInit = fs.kGetLabel()
+	var condExit = ls.cond()
+	fs.enterBlock(bl, true)
+	ls.checkNextX(TK_DO)
+	ls.block()
+	fs.kPatchList(fs.kJump(), whileInit)
+	ls.checkMatch(TK_END, TK_WHILE, line)
+	fs.leaveBlock()
+	fs.kPatchToHere(condExit) /* false conditions finish the loop */
+}
+
+// 对应C函数：`static void forstat (LexState *ls, int line)'
+func (ls *LexState) forStat(line int) {
+	/* forstat -> FOR (fornum | forlist) END*/
+	var fs = ls.fs
+	var bl = &BlockCnt{}
+	fs.enterBlock(bl, true)         /* scope for loop and control variables */
+	ls.xNext()                      /* skip `for' */
+	var varName = ls.strCheckName() /* first variable name */
+	switch ls.t.token {
+	case '=':
+		ls.forNum(varName, line)
+	case ',', TK_IN:
+		ls.forList(varName)
+	default:
+		ls.xSyntaxError("'=' or 'in' expected")
+	}
+	ls.checkMatch(TK_END, TK_FOR, line)
+	fs.leaveBlock() /* loop scope (`break' jumps to this point) */
+}
+
+// 对应C函数：`static void fornum (LexState *ls, TString *varname, int line)'
+func (ls *LexState) forNum(varName *TString, line int) {
+	/* fornum -> NAME = exp1,exp1[,exp1] forbody */
+	var fs = ls.fs
+	var base = fs.freeReg
+	ls.newLocalVarLiteral("(for index)", 0)
+	ls.newLocalVarLiteral("(for limit)", 1)
+	ls.newLocalVarLiteral("(for step)", 2)
+	ls.newLocalVar(varName, 3)
+	ls.checkNextX('=')
+	ls.exp1() /* initial value */
+	ls.checkNextX(',')
+	ls.exp1() /* limit */
+	if ls.testNext(',') {
+		ls.exp1() /* optional step */
+	} else { /* default step = 1 */
+		fs.kCodeABx(OP_LOADK, fs.freeReg, fs.kNumberK(1))
+		fs.kReserveRegs(1)
+	}
+	ls.forBody(base, line, 1, true)
+}
+
+// 对应C函数：`static int exp1 (LexState *ls)'
+func (ls *LexState) exp1() expkind {
+	var e = &expdesc{}
+	ls.expr(e)
+	var k = e.k
+	ls.fs.kExp2NextReg(e)
+	return k
+}
+
+// 对应C函数：`static void forbody (LexState *ls, int base, int line, int nvars, int isnum)'
+func (ls *LexState) forBody(base int, line int, nVars int, isNum bool) {
+	/* forbody -> DO block */
+	var bl = &BlockCnt{}
+	var fs = ls.fs
+	ls.adjustLocalVars(3) /* control variables */
+	ls.checkNextX(TK_DO)
+	var prep int
+	if isNum {
+		prep = fs.kCodeAsBx(OP_FORPREP, base, NO_JUMP)
+	} else {
+		prep = fs.kJump()
+	}
+	fs.enterBlock(bl, false) /* scope for declared variables */
+	ls.adjustLocalVars(nVars)
+	fs.kReserveRegs(nVars)
+	ls.block()
+	fs.leaveBlock() /* end of scope for declared variables */
+	fs.kPatchToHere(prep)
+	var endFor int
+	if isNum {
+		endFor = fs.kCodeAsBx(OP_FORLOOP, base, NO_JUMP)
+	} else {
+		endFor = fs.kCodeABC(OP_TFORLOOP, base, 0, nVars)
+	}
+	fs.kFixLine(line) /* pretend that `OP_FOR' starts the loop */
+	if isNum {
+		fs.kPatchList(endFor, prep+1)
+	} else {
+		fs.kPatchList(fs.kJump(), prep+1)
+	}
+}
+
+// 对应C函数：`static void forlist (LexState *ls, TString *indexname)'
+func (ls *LexState) forList(indexName *TString) {
+	/* forlist -> NAME {,NAME} IN explist1 forbody */
+	var fs = ls.fs
+	var base = fs.freeReg
+	/* create control variables */
+	ls.newLocalVarLiteral("(for generator)", 0)
+	ls.newLocalVarLiteral("(for state)", 1)
+	ls.newLocalVarLiteral("(for control)", 2)
+	/* create declared variables */
+	ls.newLocalVar(indexName, 3)
+	var nVars = 4
+	for ls.testNext(',') {
+		ls.newLocalVar(ls.strCheckName(), nVars)
+		nVars++
+	}
+	ls.checkNextX(TK_IN)
+	var line = ls.lineNumber
+	var e = &expdesc{}
+	ls.adjustAssign(3, ls.expList1(e), e)
+	fs.kCheckStack(3) /* extra space to call generator */
+	ls.forBody(base, line, nVars-3, false)
+}
+
+// 对应C函数：`static void adjust_assign (LexState *ls, int nvars, int nexps, expdesc *e)'
+func (ls *LexState) adjustAssign(nVars int, nExps int, e *expdesc) {
+	var fs = ls.fs
+	var extra = nVars - nExps
+	if hasMultiRet(e.k) {
+		extra++ /* includes call itself */
+		if extra < 0 {
+			extra = 0
+		}
+		fs.kSetReturns(e, extra) /* last exp. provides the difference */
+		if extra > 1 {
+			fs.kReserveRegs(extra - 1)
+		}
+	} else {
+		if e.k != VVOID {
+			fs.kExp2NextReg(e) /* close last expression */
+			if extra > 0 {
+				var reg = fs.freeReg
+				fs.kReserveRegs(extra)
+				fs.kNil(reg, extra)
+			}
+		}
+	}
+}
+
+// 对应C函数：`static void repeatstat (LexState *ls, int line)'
+func (ls *LexState) repeatStat(line int) {
+	/* repeatstat -> REPEAT block UNTIL cond */
+	var fs = ls.fs
+	var repeatInit = fs.kGetLabel()
+	var bl1, bl2 = new(BlockCnt), new(BlockCnt)
+	fs.enterBlock(bl1, true)  /* loop block */
+	fs.enterBlock(bl2, false) /* scope block */
+	ls.xNext()                /* skip REPEAT */
+	ls.chunk()
+	ls.checkMatch(TK_UNTIL, TK_REPEAT, line)
+	var condExit = ls.cond() /* read condition (inside scope block) */
+
+	if !bl2.upval { /* no up-values? */
+		fs.leaveBlock()                        /* finish scope */
+		ls.fs.kPatchList(condExit, repeatInit) /* close the loop */
+	} else { /* complete semantics when there are upvalues */
+		ls.breakStat()                           /* if condition then break */
+		ls.fs.kPatchToHere(condExit)             /* else... */
+		fs.leaveBlock()                          /* finish scope... */
+		ls.fs.kPatchList(fs.kJump(), repeatInit) /* and repeat */
+	}
+	fs.leaveBlock() /* finish loop */
+}
+
+// 对应C函数：`static void breakstat (LexState *ls)'
+func (ls *LexState) breakStat() {
+	var fs = ls.fs
+	var bl = fs.bl
+	var upval = false
+	for bl != nil && !bl.isBreakable {
+		upval = upval || bl.upval
+		bl = bl.previous
+	}
+	if bl == nil {
+		ls.xSyntaxError("no loop to break")
+	}
+	if upval {
+		fs.kCodeABC(OP_CLOSE, bl.nActVar, 0, 0)
+	}
+	fs.kConcat(&bl.breakList, fs.kJump())
+}
+
+// 对应C函数：`static void funcstat (LexState *ls, int line)'
+func (ls *LexState) funcStat(line int) {
+	/* funcstat -> FUNCTION funcname body */
+	var v, b = new(expdesc), new(expdesc)
+	ls.xNext() /* skip FUNCTION */
+	needSelf := ls.funcName(v)
+	ls.body(b, needSelf, line)
+	ls.fs.kStoreVar(v, b)
+	ls.fs.kFixLine(line) /* definition `happens' in the first line */
+}
+
+// 对应C函数：`static int funcname (LexState *ls, expdesc *v)'
+func (ls *LexState) funcName(v *expdesc) (needSelf bool) {
+	/* funcname -> NAME {field} [`:' NAME] */
+	ls.singleVar(v)
+	for ls.t.token == '.' {
+		ls.field(v)
+	}
+	if ls.t.token == ':' {
+		ls.field(v)
+		return true
+	}
+	return false
+}
+
+// 对应C函数：`static void localfunc (LexState *ls)'
+func (ls *LexState) localFunc() {
+	var v, b = new(expdesc), new(expdesc)
+	var fs = ls.fs
+	ls.newLocalVar(ls.strCheckName(), 0)
+	v.initExp(VLOCAL, fs.freeReg)
+	fs.kReserveRegs(1)
+	ls.adjustLocalVars(1)
+	ls.body(b, false, ls.lineNumber)
+	fs.kStoreVar(v, b)
+	/* debug information will only see the variable after this point! */
+	fs.getLocVar(fs.nActVar - 1).startPc = fs.pc
+}
+
+// 对应C函数：`static void localstat (LexState *ls)'
+func (ls *LexState) localStat() {
+	/* stat -> LOCAL NAME {`,' NAME} [`=' explist1] */
+	var nVars = 0
+	ls.newLocalVar(ls.strCheckName(), nVars)
+	nVars++
+	for ls.testNext(',') {
+		ls.newLocalVar(ls.strCheckName(), nVars)
+		nVars++
+	}
+	var nExps = 0
+	var e = new(expdesc)
+	if ls.testNext('=') {
+		nExps = ls.expList1(e)
+	} else {
+		e.k = VVOID
+		nExps = 0
+	}
+	ls.adjustAssign(nVars, nExps, e)
+	ls.adjustLocalVars(nVars)
+}
+
+// 对应C函数：`static void retstat (LexState *ls)'
+func (ls *LexState) retStat() {
+	/* stat -> RETURN explist */
+	var fs = ls.fs
+	var first, nRet int /* registers with returned values */
+
+	ls.xNext() /* skip RETURN */
+	if blockFollow(ls.t.token) || ls.t.token == ';' {
+		/* return no values */
+		first = 0
+		nRet = 0
+	} else {
+		var e = new(expdesc)
+		nRet = ls.expList1(e) /* optional return values */
+		if hasMultiRet(e.k) {
+			fs.kSetMultRet(e)
+			if e.k == VCALL && nRet == 1 { /* tail call? */
+				fs.getCode(e).SetOpCode(OP_TAILCALL)
+				LuaAssert(fs.getCode(e).GetArgA() == fs.nActVar)
+			}
+			first = fs.nActVar
+			nRet = LUA_MULTRET /* return all values */
+		} else {
+			if nRet == 1 { /* only one single value? */
+				first = fs.kExp2anyReg(e)
+			} else {
+				fs.kExp2NextReg(e) /* values must go to the `stack' */
+				first = fs.nActVar /* return all `active' values */
+				LuaAssert(nRet == fs.freeReg-first)
+			}
+		}
+	}
+	fs.kRet(first, nRet)
+}
+
+// 对应C函数：`static void exprstat (LexState *ls)'
+func (ls *LexState) exprStat() {
+	/* stat -> func | assignment */
+	var fs = ls.fs
+	var v LHSAssign
+	ls.primaryExp(&v.v)
+	if v.v.k == VCALL { /* stat -> func */
+		fs.getCode(&v.v).SetArgC(1) /* call statement uses no results */
+	} else { /* stat -> assignment */
+		v.prev = nil
+		ls.assignment(&v, 1)
+	}
+}
+
+// LHSAssign structure to chain all variables in the left-hand side of an
+// assignment
+type LHSAssign struct {
+	prev *LHSAssign
+	v    expdesc /* variable (global, local, upvalue, or indexed) */
+}
+
+// 对应C函数：`static void assignment (LexState *ls, struct LHS_assign *lh, int nvars)'
+func (ls *LexState) assignment(lh *LHSAssign, nVars int) {
+	ls.checkCondition(VLOCAL <= lh.v.k && lh.v.k <= VINDEXED, "syntax error")
+	var e = new(expdesc)
+	if ls.testNext(',') { /* assignment -> `,' primaryexp assignment */
+		var nv LHSAssign
+		nv.prev = lh
+		ls.primaryExp(&nv.v)
+		if nv.v.k == VLOCAL {
+			ls.checkConflict(lh, &nv.v)
+		}
+		ls.fs.yCheckLimit(nVars, LUAI_MAXCCALLS-ls.L.nCCalls, "variables in assignment")
+		ls.assignment(&nv, nVars+1)
+	} else { /* assignment -> `=' explist1 */
+		ls.checkNextX('=')
+		var nExps = ls.expList1(e)
+		if nExps != nVars {
+			ls.adjustAssign(nVars, nExps, e)
+			if nExps > nVars {
+				ls.fs.freeReg -= nExps - nVars /* remove extra values */
+			}
+		} else {
+			ls.fs.kSetOneRet(e) /* close last expression */
+			ls.fs.kStoreVar(&lh.v, e)
+			return /* avoid default */
+		}
+	}
+	e.initExp(VNONRELOC, ls.fs.freeReg-1) /* default assignment */
+	ls.fs.kStoreVar(&lh.v, e)
+}
+
+// check whether, in an assignment to a local variable, the local variable
+// is needed in a previous assignment (to a table). If so, save original
+// local value in a safe place and use this safe copy in the previous
+// assignment.
+// 对应C函数：`static void check_conflict (LexState *ls, struct LHS_assign *lh, expdesc *v)'
+func (ls *LexState) checkConflict(lh *LHSAssign, v *expdesc) {
+	var fs = ls.fs
+	var extra = fs.freeReg /* eventual position to save local variable */
+	var conflict = false
+	for ; lh != nil; lh = lh.prev {
+		if lh.v.k == VINDEXED {
+			if lh.v.s.info == v.s.info { /* conflict? */
+				conflict = true
+				lh.v.s.info = extra /* previous assignment will use safe copy */
+			}
+			if lh.v.s.aux == v.s.info { /* conflict? */
+				conflict = true
+				lh.v.s.aux = extra /* previous assignment will use safe copy */
+			}
+		}
+	}
+	if conflict {
+		fs.kCodeABC(OP_MOVE, fs.freeReg, v.s.info, 0) /* make copy */
+		fs.kReserveRegs(1)
+	}
 }

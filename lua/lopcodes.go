@@ -71,6 +71,13 @@ func (i *Instruction) GetOpCode() OpCode {
 	return OpCode(*i >> POS_OP & MASK1(SIZE_OP, 0))
 }
 
+// SetOpCode
+// 对应C函数：`SET_OPCODE(i,o)'
+func (i *Instruction) SetOpCode(op OpCode) {
+	*i = (*i & MASK0(SIZE_OP, POS_OP)) |
+		((Instruction(op) << POS_OP) & MASK1(SIZE_OP, POS_OP))
+}
+
 // GetArgA
 // 对应C函数：`GETARG_A(i)'
 func (i *Instruction) GetArgA() int {
@@ -223,14 +230,14 @@ const (
 	OP_TESTSET /* A B C     if (R(B) <=> C) then R(A) := R(B) else pc++ */
 
 	OP_CALL     /* A B C    R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))  */
-	OP_TAILCALL /* A B C    return R(A)(R(B+1), ... ,R(A+B-1)                   */
+	OP_TAILCALL /* A B C    return R(A)(R(A+1), ... ,R(A+B-1)                   */
 	OP_RETURN   /* A B      return RA(A), ... ,R(A+B-2) (see note)              */
 
 	OP_FORLOOP /* A sBx     R(A)+=R(A+2); if R(A) <?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }            */
 	OP_FORPREP /* A sBx     R(A)-=R(A+2); pc+=sBx   */
 
-	OP_TFORLOOP /* A C      A C R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2));
-	if  R(A+3) ~= nil then R(A+2)=R(A+3*/
+	OP_TFORLOOP /* A C      R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2));
+	*                           if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++ */
 	OP_SETLIST /* A B C     R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B    */
 
 	OP_CLOSE   /* A         close all variables in the stack upto (>=) R(A) */
