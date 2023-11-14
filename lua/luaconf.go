@@ -1,7 +1,6 @@
 package golua
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -19,11 +18,11 @@ const LUA_NUMBER_FMT = "%.14g"
 
 const LUA_QS = "'%s'"
 
-// NumberToStr
-// 对应C函数：`lua_number2str(s,n)'
-func NumberToStr(n LuaNumber) string {
-	return fmt.Sprintf(LUA_NUMBER_FMT, n)
-}
+// // NumberToStr
+// // 对应C函数：`lua_number2str(s,n)'
+// func NumberToStr(n LuaNumber) string {
+// 	return fmt.Sprintf(LUA_NUMBER_FMT, n)
+// }
 
 /* The luai_num* macros define the primitive operations over numbers. */
 func luai_numadd(a, b LuaNumber) LuaNumber {

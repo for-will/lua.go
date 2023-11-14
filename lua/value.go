@@ -1,6 +1,9 @@
 package golua
 
-import "unsafe"
+import (
+	"fmt"
+	"unsafe"
+)
 
 // Value - Union of all lua values
 type Value struct {
@@ -77,13 +80,18 @@ func (v *TValue) CFuncValue() *CClosure {
 }
 
 func (v *TValue) TableValue() *Table {
-	CheckExp(v.IsBoolean())
+	CheckExp(v.IsTable())
 	return v.value.gc.ToTable()
 }
 
 func (v *TValue) BooleanValue() LuaBoolean {
 	CheckExp(v.IsBoolean())
 	return v.value.b
+}
+
+func (v *TValue) ThreadValue() *LuaState {
+	CheckExp(v.IsThread())
+	return v.value.gc.ToThread()
 }
 
 // IsFalse
@@ -99,7 +107,7 @@ func (v *TValue) TypePtr() *ttype {
 // 对应C函数：`checkliveness(g,obj)'
 func checkliveness(g *GlobalState, obj *TValue) {
 	LuaAssert(!obj.IsCollectable() ||
-		(obj.Type() == obj.value.gc.Type() && !isdead(g, obj.value.gc)))
+		(obj.gcType() == obj.value.gc.gcType() && !isdead(g, obj.value.gc)))
 }
 
 // SetNil 将v赋值为nil
@@ -175,6 +183,12 @@ func (v *TValue) SetObj(L *LuaState, obj *TValue) {
 	checkliveness(L.G(), v)
 }
 
+// NumberToStr
+// 对应C函数：`lua_number2str(s,n)'
+func NumberToStr(n LuaNumber) string {
+	return fmt.Sprintf(LUA_NUMBER_FMT, n)
+}
+
 // 对应C函数：`int luaV_tostring (lua_State *L, StkId obj)'
 func (v *TValue) vToString(L *LuaState) bool {
 	if !v.IsNumber() {
@@ -189,10 +203,10 @@ func (v *TValue) vToString(L *LuaState) bool {
 // oRawEqualObj 比较两个TValue是否相等
 // 对应C函数 `int luaO_rawequalObj (const TValue *t1, const TValue *t2)`
 func oRawEqualObj(t1 *TValue, t2 *TValue) bool {
-	if t1.Type() != t2.Type() {
+	if t1.gcType() != t2.gcType() {
 		return false
 	}
-	switch t1.Type() {
+	switch t1.gcType() {
 	case LUA_TNIL:
 		return true
 	case LUA_TNUMBER:

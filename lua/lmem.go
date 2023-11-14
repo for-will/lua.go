@@ -51,8 +51,9 @@ func mReallocV[T any](L *LuaState, b []T, n int, e int) []T {
 	if n+1 <= int(MAX_SIZET)/e { /* +1 to avoid warnings */
 		var newV = make([]T, n)
 		copy(newV, b)
-	} else {
-		L.mTooBig()
+		return newV
 	}
+
+	L.mTooBig()
 	return nil
 }

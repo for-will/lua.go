@@ -7,7 +7,7 @@ import "math"
 // address, and as a list link (would link an element to itself).
 const NO_JUMP = -1
 
-type BinOpr = int /* 对应C类型：`enum BinOpr' */
+type BinOpr int /* 对应C类型：`enum BinOpr' */
 
 // grep "ORDER OPR" if you change these enums
 const (
@@ -476,7 +476,7 @@ func constFolding(op OpCode, e1, e2 *expdesc) bool {
 	switch op {
 	case OP_ADD:
 		r = luai_numadd(v1, v2)
-	case OPR_SUB:
+	case OP_SUB:
 		r = luai_numsub(v1, v2)
 	case OP_MUL:
 		r = luai_nummul(v1, v2)
@@ -764,7 +764,7 @@ func (fs *FuncState) kPosFix(op BinOpr, e1 *expdesc, e2 *expdesc) {
 	case OPR_CONCAT:
 		fs.kExp2val(e2)
 		if e2.k == VRELOCABLE && fs.getCode(e2).GetOpCode() == OP_CONCAT {
-			LuaAssert(e1.s.info == fs.getCode(e2).Ptr(-1).GetArgB())
+			LuaAssert(e1.s.info == fs.getCode(e2).GetArgB()-1)
 			fs.freeExp(e1)
 			fs.getCode(e2).SetArgB(e1.s.info)
 			e1.k = VRELOCABLE

@@ -108,3 +108,22 @@ type LuaDebug struct {
 func LuaOpen() *LuaState {
 	return LNewState()
 }
+
+// Register
+// 对应C函数：`lua_register(L,n,f)'
+func (L *LuaState) Register(name string, f LuaCFunction) {
+	L.PushCFunction(f)
+	L.SetGlobal(name)
+}
+
+// PushCFunction
+// 对应C函数：`lua_pushcfunction(L,f)'
+func (L *LuaState) PushCFunction(f LuaCFunction) {
+	L.PushCClosure(f, 0)
+}
+
+// SetGlobal
+// 对应C函数：`lua_setglobal(L,s)'
+func (L *LuaState) SetGlobal(k string) {
+	L.SetField(LUA_GLOBALSINDEX, k)
+}

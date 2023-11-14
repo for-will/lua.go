@@ -1,6 +1,7 @@
 package golua
 
 import (
+	"reflect"
 	"unsafe"
 )
 
@@ -41,12 +42,12 @@ type callS struct { /* data to `f_call' */
 	nResults int
 }
 
-// PushLString
+// PushString
 // 对应C函数：`LUA_API void lua_pushlstring (lua_State *L, const char *s, size_t len)'
-func (L *LuaState) PushLString(s []byte) {
+func (L *LuaState) PushString(s string) {
 	L.Lock()
 	L.cCheckGC()
-	L.Top().SetString(L, L.sNewLStr(s))
+	L.Top().SetString(L, L.sNewStr([]byte(s)))
 	L.apiIncrTop()
 	L.Unlock()
 }
@@ -54,7 +55,7 @@ func (L *LuaState) PushLString(s []byte) {
 // PushLiteral
 // 对应C函数：`lua_pushliteral(L, s)'
 func (L *LuaState) PushLiteral(s string) {
-	L.PushLString([]byte(s))
+	L.PushString(s)
 }
 
 func (L *LuaState) PushFString(format string, args ...interface{}) []byte {
@@ -97,7 +98,7 @@ func (L *LuaState) checkResults(na int, nr int) {
 // 对应C函数：`LUA_API const char *lua_tolstring (lua_State *L, int idx, size_t *len)'
 func (L *LuaState) ToLString(idx int) (b []byte, len int) {
 	o := index2adr(L, idx)
-	if o.IsNil() {
+	if !o.IsString() {
 		L.Lock()             /*`luaV_tostring' may create a new string */
 		if !o.vToString(L) { /* conversion failed? */
 			L.Unlock()
@@ -190,4 +191,159 @@ func (L *LuaState) AtPanic(fPanic LuaCFunction) LuaCFunction {
 	L.G().panic = fPanic
 	L.Unlock()
 	return old
+}
+
+// PushCClosure
+// 对应C函数：`LUA_API void lua_pushcclosure (lua_State *L, lua_CFunction fn, int n)'
+func (L *LuaState) PushCClosure(fn LuaCFunction, n int) {
+	L.Lock()
+	L.cCheckGC()
+	L.apiCheckNElems(n)
+	var cl = L.fNewCClosure(n, L.getCurrEnv())
+	cl.f = fn
+	L.top -= n
+	for n > 0 {
+		n--
+		cl.upValue[n].SetObj(L, L.AtTop(n))
+	}
+	L.Top().SetClosure(L, cl)
+	// todo: LuaAssert(cl.IsWhite())
+	L.apiIncrTop()
+	L.Unlock()
+}
+
+// 对应C函数：`static Table *getcurrenv (lua_State *L) '
+func (L *LuaState) getCurrEnv() *Table {
+	if L.ci == 0 { /* no enclosing function? */
+		return L.GlobalTable().TableValue() /* use global table as environment */
+	} else {
+		return L.CurrFunc().C().env
+	}
+}
+
+// SetField
+// 对应C函数：`LUA_API void lua_setfield (lua_State *L, int idx, const char *k)'
+func (L *LuaState) SetField(idx int, k string) {
+	L.Lock()
+	L.apiCheckNElems(1)
+	var t = index2adr(L, idx)
+	L.apiCheckValidIndex(t)
+	var key TValue
+	key.SetString(L, L.sNew([]byte(k)))
+	L.vSetTable(t, &key, L.Top().Ptr(-1))
+	L.top-- /* pop value */
+	L.Unlock()
+}
+
+// Type
+// 对应C函数：`LUA_API int lua_type (lua_State *L, int idx)'
+func (L *LuaState) Type(idx int) ttype {
+	var o = index2adr(L, idx)
+	if o == LuaObjNil {
+		return LUA_TNONE
+	}
+	return o.gcType()
+}
+
+// IsString
+// 对应C函数：`LUA_API int lua_isstring (lua_State *L, int idx)'
+func (L *LuaState) IsString(idx int) bool {
+	var t = L.Type(idx)
+	return t == LUA_TSTRING || t == LUA_TNUMBER
+}
+
+// IsFunction
+// 对应C函数：`lua_isfunction(L,n)'
+func (L *LuaState) IsFunction(idx int) bool {
+	return L.Type(idx) == LUA_TFUNCTION
+}
+
+// IsTable
+// 对应C函数：`lua_istable(L,n)'
+func (L *LuaState) IsTable(idx int) bool {
+	return L.Type(idx) == LUA_TTABLE
+}
+
+// IsLightUserData
+// 对应C函数：`lua_islightuserdata(L,n)'
+func (L *LuaState) IsLightUserData(idx int) bool {
+	return L.Type(idx) == LUA_TLIGHTUSERDATA
+}
+
+// IsNil
+// 对应C函数：`lua_isnil(L,n)'
+func (L *LuaState) IsNil(idx int) bool {
+	return L.Type(idx) == LUA_TNIL
+}
+
+// IsBoolean
+// 对应C函数：`lua_isboolean(L,n)'
+func (L *LuaState) IsBoolean(idx int) bool {
+	return L.Type(idx) == LUA_TBOOLEAN
+}
+
+// IsThread
+// 对应C函数：`lua_isthread(L,n)'
+func (L *LuaState) IsThread(idx int) bool {
+	return L.Type(idx) == LUA_TTHREAD
+}
+
+// IsNone
+// 对应C函数：`lua_isnone(L,n)'
+func (L *LuaState) IsNone(idx int) bool {
+	return L.Type(idx) == LUA_TNONE
+}
+
+// IsNoneOrNil
+// 对应C函数：`lua_isnoneornil(L,n)'
+func (L *LuaState) IsNoneOrNil(idx int) bool {
+	return L.Type(idx) <= 0
+}
+
+// ToBoolean
+// 对应C函数：`LUA_API int lua_toboolean (lua_State *L, int idx) '
+func (L *LuaState) ToBoolean(idx int) bool {
+	var o = index2adr(L, idx)
+	return !o.IsFalse()
+}
+
+// ToUserData
+// 对应C函数：`LUA_API void *lua_touserdata (lua_State *L, int idx)'
+func (L *LuaState) ToUserData(idx int) interface{} {
+	var o = index2adr(L, idx)
+	switch o.gcType() {
+	case LUA_TUSERDATA:
+		return o.UdataValue()
+	case LUA_TLIGHTUSERDATA:
+		return o.PointerValue()
+	default:
+		return nil
+	}
+}
+
+// ToPointer
+// 对应C函数：`LUA_API const void *lua_topointer (lua_State *L, int idx) '
+func (L *LuaState) ToPointer(idx int) unsafe.Pointer {
+	var o = index2adr(L, idx)
+	switch o.gcType() {
+	case LUA_TTABLE:
+		return unsafe.Pointer(o.TableValue())
+	case LUA_TFUNCTION:
+		return reflect.ValueOf(o.ClosureValue()).Addr().UnsafePointer()
+	case LUA_TTHREAD:
+		return unsafe.Pointer(o.ThreadValue())
+	case LUA_TUSERDATA, LUA_TLIGHTUSERDATA:
+		return reflect.ValueOf(L.ToUserData(idx)).Addr().UnsafePointer()
+	default:
+		return nil
+	}
+}
+
+// TypeName
+// 对应C函数：`LUA_API const char *lua_typename (lua_State *L, int t)'
+func (L *LuaState) TypeName(t ttype) string {
+	if t == LUA_TNONE {
+		return "no value"
+	}
+	return LuaTTypeNames[t]
 }

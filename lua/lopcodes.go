@@ -157,8 +157,8 @@ func CreateABx(o OpCode, a int, bc int) Instruction {
 
 /* Macros to operate RK indices */
 const (
-	BITRK      = 1 << (SIZE_B - 1)
-	MAXINDEXRK = BITRK - 1
+	BITRK      = 1 << (SIZE_B - 1) /* 最高位置位表示是常量 */
+	MAXINDEXRK = BITRK - 1         /* 最大的常量index */
 )
 
 // ISK
@@ -168,14 +168,14 @@ func ISK(x int) bool {
 	return x&BITRK != 0
 }
 
-// INDEXK
+// INDEXK 通过复位最高位的常量标志位，得到低位表示的常量index。
 // gets the index of the constant
 // 对应C函数：`INDEXK(r)'
 func INDEXK(r int) int {
 	return r & ^BITRK
 }
 
-// RKASK
+// RKASK 通过置位常量标志位，返回一个表示常量index的值。
 // code a constant index as a RK value
 // 对应C函数：`RKASK(x)'
 func RKASK(x int) int {
@@ -184,7 +184,7 @@ func RKASK(x int) int {
 
 const NO_REG = MAXARG_A /* invalid register that fits in 8 bits */
 
-type OpCode = int
+type OpCode int
 
 // R(x) - register
 // Kst(x) - constant (in constant table)

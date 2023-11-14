@@ -54,7 +54,7 @@ func (L *LuaState) vConcat(total int, last int) {
 				copy(buffer[tl:], s.Bytes)
 				tl += s.Len
 			}
-			top.Ptr(-n).SetString(L, L.sNewLStr(buffer[:tl]))
+			top.Ptr(-n).SetString(L, L.sNewStr(buffer[:tl]))
 		}
 		total -= n - 1 /* got 'n' strings to create 1 new */
 		last -= n - 1
@@ -214,7 +214,7 @@ reentry: /* entry point */
 			return &L.stack[base+i.GetArgC()]
 		}*/
 		RKB = func(i Instruction) *TValue {
-			CheckExp(getBMode(i.GetArgB()) == OpArgK)
+			CheckExp(getBMode(i.GetOpCode()) == OpArgK)
 			B := i.GetArgB()
 			if ISK(B) {
 				return &k[INDEXK(B)]
@@ -407,7 +407,7 @@ reentry: /* entry point */
 			continue
 		case OP_LEN:
 			var rb = RB(i)
-			switch rb.Type() {
+			switch rb.gcType() {
 			case LUA_TTABLE:
 				ra.SetNumber(LuaNumber(rb.TableValue().GetN()))
 			case LUA_TSTRING:
@@ -674,14 +674,14 @@ func traceexec(L *LuaState, pc *Instruction) {
 
 // 对应C函数：`equalobj(L,o1,o2)'
 func equalobj(L *LuaState, o1, o2 *TValue) bool {
-	return o1.Type() == o2.Type() && vEqualVal(L, o1, o2)
+	return o1.gcType() == o2.gcType() && vEqualVal(L, o1, o2)
 }
 
 // 对应C函数：`int luaV_equalval (lua_State *L, const TValue *t1, const TValue *t2)'
 func vEqualVal(L *LuaState, t1, t2 *TValue) bool {
 	var tm *TValue
-	LuaAssert(t1.Type() == t2.Type())
-	switch t1.Type() {
+	LuaAssert(t1.gcType() == t2.gcType())
+	switch t1.gcType() {
 	case LUA_TNIL:
 		return true
 	case LUA_TNUMBER:
@@ -736,7 +736,7 @@ func get_compTM(L *LuaState, mt1, mt2 *Table, event TMS) *TValue {
 
 // 对应C函数：`int luaV_lessthan (lua_State *L, const TValue *l, const TValue *r)'
 func (L *LuaState) vLessThan(l *TValue, r *TValue) bool {
-	if l.Type() != r.Type() {
+	if l.gcType() != r.gcType() {
 		return L.gOrderError(l, r)
 	} else if l.IsNumber() {
 		return luai_numlt(l.NumberValue(), r.NumberValue())
@@ -750,7 +750,7 @@ func (L *LuaState) vLessThan(l *TValue, r *TValue) bool {
 
 // 对应C函数：`static int lessequal (lua_State *L, const TValue *l, const TValue *r)'
 func lessequal(L *LuaState, l *TValue, r *TValue) bool {
-	if l.Type() != r.Type() {
+	if l.gcType() != r.gcType() {
 		return L.gOrderError(l, r)
 	} else if l.IsNumber() {
 		return luai_numle(l.NumberValue(), r.NumberValue())

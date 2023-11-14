@@ -2,13 +2,27 @@ package golua
 
 import "unsafe"
 
+// 对应C函数：`Closure *luaF_newCclosure (lua_State *L, int nelems, Table *e)'
+func (L *LuaState) fNewCClosure(nElems int, e *Table) *CClosure {
+	var c = &CClosure{
+		ClosureHeader: ClosureHeader{},
+		f:             nil,
+		upValue:       make([]TValue, nElems),
+	}
+	L.cLink(c, LUA_TFUNCTION)
+	c.isC = true
+	c.env = e
+	c.nUpValues = lu_byte(nElems)
+	return c
+}
+
 // fNewLClosure
 // 对应C函数：`Closure *luaF_newLclosure (lua_State *L, int nelems, Table *e)'
 func (L *LuaState) fNewLClosure(nelems int, e *Table) *LClosure {
 	c := &LClosure{
 		upVals: make([]*UpVal, nelems),
 	}
-	// todo: luaC_link(L, obj2gco(c), LUA_TFUNCTION);
+	L.cLink(c, LUA_TFUNCTION)
 	c.isC = false
 	c.env = e
 	c.nUpValues = lu_byte(nelems)
@@ -51,7 +65,7 @@ func (L *LuaState) fFindUpVal(level StkId) *UpVal {
 // 对应C函数：`UpVal *luaF_newupval (lua_State *L)'
 func fNewUpVal(L *LuaState) *UpVal {
 	uv := &UpVal{}
-	// todo: luaC_link(L, obj2gco(uv), LUA_TUPVAL)
+	L.cLink(uv, LUA_TUPVAL)
 	uv.v = &uv.value
 	uv.v.SetNil()
 	return uv
@@ -95,6 +109,6 @@ func (L *LuaState) fNewProto() *Proto {
 		isVarArg:        0,
 		maxStackSize:    0,
 	}
-	// todo: luaC_link(L, obj2gco(f), LUA_TPROTO);
+	L.cLink(f, LUA_TPROTO)
 	return f
 }

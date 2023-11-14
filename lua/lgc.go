@@ -1,7 +1,5 @@
 package golua
 
-import "log"
-
 /* Possible states of the Garbage Collector */
 const (
 	GCSPause       = 0
@@ -48,36 +46,45 @@ func (c *CommonHeader) ChangeWhite() {
 // 对应C函数：`isdead(g,v)'
 func isdead(g *GlobalState, v GCObject) bool {
 	// todo: isdead
-	log.Println("isdead: not implemented ")
+	// log.Println("isdead: not implemented ")
 	return false
 }
 
 // 对应C函数：`luaC_checkGC(L)'
 func (L *LuaState) cCheckGC() {
 	// todo: cCheckGC
-	log.Println("cCheckGC not implemented")
+	// log.Println("cCheckGC not implemented")
 }
 
 // 对应C函数：`void luaC_freeall (lua_State *L)'
 func (L *LuaState) cFreeAll() {
 	// todo: cFreeAll
-	log.Println("cFreeAll not implemented")
+	// log.Println("cFreeAll not implemented")
 }
 
 // 对应C函数：` luaC_barrier(L,p,v)'
 func (L *LuaState) cBarrier(p GCObject, v *TValue) {
 	// todo: cBarrier
-	log.Println("cBarrier not implemented")
+	// log.Println("cBarrier not implemented")
 }
 
 // 对应C函数：`luaC_barriert(L,t,v)'
 func (L *LuaState) cBarrierT(t *Table, v *TValue) {
 	// todo: cBarrierT
-	log.Println("cBarrierT not implemented")
+	// log.Println("cBarrierT not implemented")
 }
 
 // 对应C函数：`luaC_objbarrier(L,p,o)'
 func (L *LuaState) cObjBarrier(p *Proto, o GCObject) {
 	// todo: cObjBarrier
-	log.Println("cObjBarrier not implemented")
+	// log.Println("cObjBarrier not implemented")
+}
+
+// 对应C函数：`void luaC_link (lua_State *L, GCObject *o, lu_byte tt)'
+func (L *LuaState) cLink(o GCObject, tt ttype) {
+	var g = L.G()
+	o.SetNext(g.rootGC)
+	g.rootGC = o
+	o.SetMarked(g.cWhite())
+	o.setType(tt)
 }

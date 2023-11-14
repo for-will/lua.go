@@ -17,7 +17,7 @@ const (
 	LUA_TTHREAD        ttype = 8
 )
 
-func (t ttype) Type() ttype {
+func (t ttype) gcType() ttype {
 	return t
 }
 

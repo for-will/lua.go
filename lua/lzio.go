@@ -21,9 +21,9 @@ func (z *ZIO) Fill() int {
 		return EOZ
 	}
 	z.n = size - 1
-	z.p = 0
-	z.p++
-	return int(z.buff[z.p])
+	z.p = 1
+	z.buff = buff
+	return int(z.buff[0])
 }
 
 // Lookahead
@@ -118,6 +118,7 @@ func (m *MBuffer) Resize(n int) {
 	b := make([]byte, n)
 	copy(b, m.buffer)
 	m.buffer = b
+	m.size = n
 }
 
 // Free
@@ -140,4 +141,8 @@ func (m *MBuffer) Len() int {
 
 func (m *MBuffer) string() string {
 	return string(m.buffer[:m.n])
+}
+
+func (m *MBuffer) Bytes() []byte {
+	return m.buffer[:m.n]
 }

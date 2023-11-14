@@ -128,7 +128,7 @@ func (t *Table) HashPointer(p interface{}) *Node {
 // returns the `main` position of an element in a table (that is, the index
 // of its hash value)
 func (t *Table) MainPosition(key *TValue) *Node {
-	switch key.Type() {
+	switch key.gcType() {
 	case LUA_TNUMBER:
 		return t.HashNum(key.NumberValue())
 	case LUA_TSTRING:
@@ -168,7 +168,7 @@ func (t *Table) findIndex(L *LuaState, key StkId) int {
 		for n != nil { /* check whether `key` is somewhere in the chain */
 			/* key may be dead already, but it is ok to use it in `next` */
 			if oRawEqualObj(n.GetVal(), key) ||
-				(n.GetKey().Type() == LUA_TDEADKEY &&
+				(n.GetKey().gcType() == LUA_TDEADKEY &&
 					key.IsCollectable() &&
 					n.GetKey().GcValue() == key.GcValue()) {
 				i = t.IndexNode(n)
@@ -206,29 +206,26 @@ func (t *Table) hNext(L *LuaState, key StkId) int {
 
 /* Rehash */
 
-// 返回：elements - 数组中存放元素的数量 ； size - 新的数组的大小；
+// 返回：na - 数组中存放元素的数量 ； n - 新的数组的大小；
 // 对应C函数 `static int computesizes (int nums[], int *narray)`
-func computeSizes(nums []int, narray int) (elements, size int) {
-	var (
-		i      = 0
-		twotoi = 1 // 2^i
-		a      = 0 // number of elements smaller than 2^i
-		na     = 0 // number of elements to go to array
-		n      = 0 // optimal size for array part
-	)
+func computeSizes(nums []int, nArray int) (na, n int) {
+	var twotoi = 1 /* 2^i */
+	var a = 0      /* number of elements smaller than 2^i */
+	na = 0         /* number of elements to go to array */
+	n = 0          /* optimal size for array part */
 
-	for twotoi/2 < narray {
+	for i := 0; twotoi/2 < nArray; i++ {
 		if nums[i] > 0 {
 			a += nums[i]
-			// more than half elements present?
-			if a > twotoi/2 {
-				n = twotoi // optimal size (still now)
-				na = a     // all elements smaller than n will goto array part
+			if a > twotoi/2 { /* more than half elements present? */
+				n = twotoi /* optimal size (still now) */
+				na = a     /* all elements smaller than n will goto array part */
 			}
 		}
-		if a == narray {
-			break // all elements already counted
+		if a == nArray {
+			break /* all elements already counted */
 		}
+		twotoi *= 2
 	}
 	return na, n
 }
@@ -416,7 +413,7 @@ func (L *LuaState) hNew(narray int, nhash int) *Table {
 		lSizeNode: 0,
 		node:      DummyNodes[:],
 	}
-	// todo: luaC_link(L, obj2gco(t), LUA_TTABLE)
+	L.cLink(t, LUA_TTABLE)
 	t.setArrayVector(narray)
 	t.setNodeVector(L, nhash)
 	return t
@@ -432,14 +429,15 @@ func (t *Table) getFreePos() *Node {
 	return nil // could not find a free place
 }
 
-// NewKey 在table中添加插入新的key并返回对应value的指针
+// newKey 在table中添加插入新的key并返回对应value的指针
 // 对应C函数 `static TValue *newkey (lua_State *L, Table *t, const TValue *key)`
 // inserts a new key into a has table; first, check whether key's main
 // position is free. If not, check whether colliding node is in its main
 // position or not: if it is not, move colliding node to an empty place and
 // put new key in its main position; otherwise (colliding node is in its main
 // position), new key goes to an empty position.
-func (t *Table) NewKey(L *LuaState, key *TValue) *TValue {
+// 对应C函数：`static TValue *newkey (lua_State *L, Table *t, const TValue *key)'
+func (t *Table) newKey(L *LuaState, key *TValue) *TValue {
 	mp := t.MainPosition(key)
 	if !mp.GetVal().IsNil() || mp == DummyNode {
 		n := t.getFreePos() // get a free place
@@ -448,17 +446,17 @@ func (t *Table) NewKey(L *LuaState, key *TValue) *TValue {
 			return t.Set(L, key) // re-insert key into grown table
 		}
 		LuaAssert(n != DummyNode)
-		othern := t.MainPosition(mp.GetVal())
+		on := t.MainPosition(mp.GetKeyVal())
 
 		// is colliding node out of its main position?
-		if othern != mp {
+		if on != mp {
 			// yes; move colliding node into free position
-			for othern.GetNext() != mp {
-				othern = othern.GetNext() // find previous
+			for on.GetNext() != mp {
+				on = on.GetNext() // find previous
 			}
-			othern.SetNext(n) // redo the chain with `n` in place of `mp`
-			*n = *mp          // copy colliding node into free pos. (mp->next also goes)
-			mp.SetNext(nil)   // now `mp` is free
+			on.SetNext(n)   // redo the chain with `n` in place of `mp`
+			*n = *mp        // copy colliding node into free pos. (mp->next also goes)
+			mp.SetNext(nil) // now `mp` is free
 			mp.GetVal().SetNil()
 		} else {
 			// colliding node is in its own main position
@@ -469,7 +467,7 @@ func (t *Table) NewKey(L *LuaState, key *TValue) *TValue {
 		}
 	}
 	mp.GetKey().TValue = *key
-	// todo: luaC_barriert(L, t, key);
+	L.cBarrierT(t, key)
 	LuaAssert(mp.GetVal().IsNil())
 	return mp.GetVal()
 }
@@ -511,7 +509,7 @@ func (t *Table) GetByString(key *TString) *TValue {
 // Get main search function
 // 对应C函数 `const TValue *luaH_get (Table *t, const TValue *key)`
 func (t *Table) Get(key *TValue) *TValue {
-	switch key.Type() {
+	switch key.gcType() {
 	case LUA_TNIL:
 		return LuaObjNil
 	case LUA_TSTRING:
@@ -550,7 +548,7 @@ func (t *Table) Set(L *LuaState, key *TValue) *TValue {
 		} else if key.IsNumber() && math.IsNaN(key.NumberValue()) {
 			L.gRunError("table index is NaN")
 		}
-		return t.NewKey(L, key)
+		return t.newKey(L, key)
 	}
 }
 
@@ -563,7 +561,7 @@ func (t *Table) SetByNum(L *LuaState, key int) *TValue {
 	} else {
 		k := &TValue{}
 		k.SetNumber(LuaNumber(key))
-		return t.NewKey(L, k)
+		return t.newKey(L, k)
 	}
 }
 
@@ -575,7 +573,7 @@ func (t *Table) SetByStr(L *LuaState, key *TString) *TValue {
 	} else {
 		var k TValue
 		k.SetString(L, key)
-		return t.NewKey(L, &k)
+		return t.newKey(L, &k)
 	}
 }
 

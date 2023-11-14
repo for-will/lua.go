@@ -13,9 +13,11 @@ const (
 	TOKEN_LEN = len("function")
 )
 
+type tk int
+
 const (
 	/* terminal symbols denoted by reserved words */
-	TK_AND = iota + FIRST_RESERVED
+	TK_AND tk = iota + FIRST_RESERVED
 	TK_BREAK
 	TK_DO
 	TK_ELSE
@@ -50,7 +52,7 @@ const (
 	TK_EOS
 )
 
-const NUM_RESERVED = TK_WHILE - FIRST_RESERVED + 1
+const NUM_RESERVED = int(TK_WHILE - FIRST_RESERVED + 1)
 
 /* ORDER RESERVED */
 var luaXTokens = []string{
@@ -82,14 +84,14 @@ type SemInfo struct {
 // Token
 // 对应C结构：`struct Token'
 type Token struct {
-	token   int
+	token   tk
 	semInfo SemInfo
 }
 
 // LexState
 // 对应C结构：`struct LexState'
 type LexState struct {
-	current    int        /* current character (charint) */
+	current    tk         /* current character (charint) */
 	lineNumber int        /* input line counter */
 	lastLine   int        /* line of last token `consumed' */
 	t          Token      /* current token */
@@ -117,7 +119,7 @@ func xSetInput(L *LuaState, ls *LexState, z *ZIO, source *TString) {
 
 // 对应C函数：`next(ls)'
 func (ls *LexState) next() {
-	ls.current = ls.z.GetCh()
+	ls.current = tk(ls.z.GetCh())
 }
 
 // 对应C函数：`void luaX_next (LexState *ls)'
@@ -132,7 +134,7 @@ func (ls *LexState) xNext() {
 }
 
 // 对应C函数：`static int llex (LexState *ls, SemInfo *seminfo)'
-func (ls *LexState) llex(seminfo *SemInfo) int {
+func (ls *LexState) llex(seminfo *SemInfo) tk {
 	ls.buff.Reset()
 	for {
 		switch ls.current {
@@ -234,9 +236,9 @@ func (ls *LexState) llex(seminfo *SemInfo) int {
 				for isalnum(ls.current) || ls.current == '_' {
 					ls.saveAndNext()
 				}
-				var ts = ls.xNewString(ls.buff.buffer)
+				var ts = ls.xNewString(ls.buff.Bytes())
 				if ts.Reserved > 0 { /* reserved word? */
-					return int(ts.Reserved-1) + FIRST_RESERVED
+					return tk(ts.Reserved-1) + FIRST_RESERVED
 				} else {
 					seminfo.ts = ts
 					return TK_NAME
@@ -363,7 +365,7 @@ endloop:
 }
 
 // 对应C函数：`static void read_string (LexState *ls, int del, SemInfo *seminfo)'
-func (ls *LexState) readString(del int, seminfo *SemInfo) {
+func (ls *LexState) readString(del tk, seminfo *SemInfo) {
 	ls.saveAndNext()
 	for ls.current != del {
 		switch ls.current {
@@ -373,7 +375,7 @@ func (ls *LexState) readString(del int, seminfo *SemInfo) {
 			ls.xLexError("unfinished string", TK_STRING)
 		case '\\':
 			ls.next() /* do not save the '\' */
-			var c int
+			var c tk
 			switch ls.current {
 			case 'a':
 				c = '\a'
@@ -426,7 +428,7 @@ func (ls *LexState) readString(del int, seminfo *SemInfo) {
 // 对应C函数：`TString *luaX_newstring (LexState *ls, const char *str, size_t l)'
 func (ls *LexState) xNewString(str []byte) *TString {
 	var L = ls.L
-	var ts = L.sNewLStr(str)
+	var ts = L.sNewStr(str)
 	var o = ls.fs.h.SetByStr(L, ts) /* entry for `str' */
 	if o.IsNil() {
 		o.SetBoolean(true) /* make sure `str' will not be collected */
@@ -459,7 +461,7 @@ func (ls *LexState) xSyntaxError(msg string) {
 }
 
 // 对应C函数：`void luaX_lexerror (LexState *ls, const char *msg, int token)'
-func (ls *LexState) xLexError(msg string, token int) {
+func (ls *LexState) xLexError(msg string, token tk) {
 	const MAXSRC = 80
 	var buff = make([]byte, 80)
 	oChunkId(buff, string(ls.source.Bytes), MAXSRC)
@@ -471,7 +473,7 @@ func (ls *LexState) xLexError(msg string, token int) {
 }
 
 // 对应C函数：`static const char *txtToken (LexState *ls, int token)'
-func (ls *LexState) txtToken(token int) string {
+func (ls *LexState) txtToken(token tk) string {
 	switch token {
 	case TK_NAME, TK_STRING, TK_NUMBER:
 		// ls.save(0)
@@ -483,9 +485,9 @@ func (ls *LexState) txtToken(token int) string {
 }
 
 // 对应C函数：`const char *luaX_token2str (LexState *ls, int token)'
-func (ls *LexState) xToken2str(token int) string {
+func (ls *LexState) xToken2str(token tk) string {
 	if token < FIRST_RESERVED {
-		LuaAssert(token == int(uint8(token)))
+		LuaAssert(token == tk(uint8(token)))
 		if iscntrl(token) {
 			return string(ls.L.oPushFString("char(%d)", token))
 		} else {
@@ -497,7 +499,7 @@ func (ls *LexState) xToken2str(token int) string {
 }
 
 // 对应C函数：`static void save (LexState *ls, int c)'
-func (ls *LexState) save(c int) {
+func (ls *LexState) save(c tk) {
 	var b = ls.buff
 	if b.n+1 > b.size {
 		if b.size > int(MAX_SIZET/2) {
@@ -541,24 +543,24 @@ func (ls *LexState) xLookAhead() {
 
 // ----------------------------------------------------------------------------
 
-func iscntrl(c int) bool {
+func iscntrl(c tk) bool {
 	return unicode.IsControl(rune(c))
 }
 
-func isdigit(c int) bool {
+func isdigit(c tk) bool {
 	return unicode.IsDigit(rune(c))
 }
 
-func isalpha(c int) bool {
+func isalpha(c tk) bool {
 	return unicode.IsLetter(rune(c))
 }
 
-func isalnum(c int) bool {
+func isalnum(c tk) bool {
 	var r = rune(c)
 	return unicode.IsDigit(r) || unicode.IsLetter(r)
 }
 
-func isspace(c int) bool {
+func isspace(c tk) bool {
 	return unicode.IsSpace(rune(c))
 }
 

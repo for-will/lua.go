@@ -241,7 +241,7 @@ func (L *LuaState) dPrecall(fn StkId, nResults int) int {
 			base = adjust_varargs(L, p, nargs)
 			fn = restorestack(L, funcr) /* previous call may change the stack */
 		}
-		ci := L.baseCi[inc_ci(L)] /* now `enter' new function */
+		ci := L.incCI() /* now `enter' new function */
 		ci.fn = fn
 		ci.base = base
 		L.base = base
@@ -262,7 +262,7 @@ func (L *LuaState) dPrecall(fn StkId, nResults int) int {
 		return PCRLUA
 	} else { /* if is a C function, call it */
 		L.dCheckStack(LUA_MINSTACK) /* ensure minimum stack size */
-		ci := L.baseCi[inc_ci(L)]   /* now `enter' new function */
+		ci := L.incCI()             /* now `enter' new function */
 		ci.fn = restorestack(L, funcr)
 		ci.base = funcr + 1
 		L.base = ci.base
@@ -348,16 +348,16 @@ func adjust_varargs(L *LuaState, p *Proto, actual int) int {
 }
 
 // 对应C函数：` inc_ci(L)'
-func inc_ci(L *LuaState) int {
+func (L *LuaState) incCI() *CallInfo {
 	if L.ci == L.endCi {
-		return growCI(L)
+		growCI(L)
 	} else {
 		if CondHardStackTests() {
 			L.dReallocCI(L.sizeCi)
 		}
 		L.ci++
-		return L.ci
 	}
+	return &L.baseCi[L.ci]
 }
 
 // 这种static的C函数，只有一个地方被调用，可以放到被调用的地方，写成一个匿名函数。

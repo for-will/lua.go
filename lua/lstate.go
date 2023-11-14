@@ -12,14 +12,17 @@ const (
 // type GCObject interface{}
 
 type GCObject interface {
-	Type() ttype
+	gcType() ttype
+	setType(t ttype)
 	Next() GCObject
 	SetNext(obj GCObject)
+	SetMarked(m lu_byte)
 	ToTString() *TString // gco2ts
 	ToTable() *Table
 	ToClosure() Closure
 	ToUpval() *UpVal
 	ToUdata() *Udata
+	ToThread() *LuaState
 }
 
 // GlobalState
@@ -97,7 +100,11 @@ type LG struct {
 // NewState
 // 对应C函数：`LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud)'
 func NewState(f LuaAlloc, ud interface{}) *LuaState {
-	l := &LG{}
+	l := &LG{
+		g: GlobalState{
+			StrT: new(StringTable),
+		},
+	}
 	L := &l.l
 	g := &l.g
 	L.next = nil
@@ -113,7 +120,7 @@ func NewState(f LuaAlloc, ud interface{}) *LuaState {
 	g.uvHead.l.next = &g.uvHead
 	g.GCThreshold = 0 /* mark it as unfinished state */
 	g.StrT.Size = 0
-	g.StrT.NUse = 0
+	g.StrT.NrUse = 0
 	g.StrT.Hash = nil
 	L.Registry().SetNil()
 	g.buff.Init()
@@ -135,7 +142,7 @@ func NewState(f LuaAlloc, ud interface{}) *LuaState {
 	}
 	if L.dRawRunProtected(f_luaopen, nil) != 0 {
 		/* memory allocation error: free partial state */
-		closeState(L)
+		L.closeState()
 		L = nil
 	} else {
 		LUAIUserStateOpen(L)
@@ -145,16 +152,16 @@ func NewState(f LuaAlloc, ud interface{}) *LuaState {
 }
 
 // 对应C函数：`static void close_state (lua_State *L)'
-func closeState(L *LuaState) {
+func (L *LuaState) closeState() {
 	g := L.G()
 	L.fClose(&L.stack[0]) /* close all upvalues for this thread */
 	L.cFreeAll()
-	LuaAssert(g.rootGC == L) /* collect all objects */
-	LuaAssert(g.StrT.NUse == 0)
+	// todo: LuaAssert(g.rootGC == L) /* collect all objects */
+	// todo: LuaAssert(g.StrT.NUse == 0)
 	L.G().StrT.Hash = nil
 	g.buff.Free()
 	freestack(L, L)
-	LuaAssert(g.totalBytes == int(unsafe.Sizeof(LG{})))
+	// todo: LuaAssert(g.totalBytes == int(unsafe.Sizeof(LG{})))
 	g.ud = nil
 }
 
@@ -413,4 +420,33 @@ func (ci *CallInfo) fIsLua() bool {
 // 对应C函数：`isLua(ci)'
 func (ci *CallInfo) IsLua() bool {
 	return ci.fn.IsFunction() && ci.fIsLua()
+}
+
+// Close
+// 对应C函数：`LUA_API void lua_close (lua_State *L)'
+func (L *LuaState) Close() {
+	L = L.G().mainThread /* only the main thread can be closed */
+	L.Lock()
+	L.fClose(&L.stack[0]) /* close all upvalues for this thread */
+	// todo:  L.cSepareateUdata(1)  /* separate udata that have GC metamethods */
+	L.errFunc = 0 /* no error function during GC metamethods */
+
+	for { /* repeat until no more errors */
+		L.ci = 0
+		L.base = L.CI().base
+		L.top = L.base
+		L.nCCalls = 0
+		L.baseCCalls = 0
+		if L.dRawRunProtected(callAllGcTM, nil) == 0 {
+			break
+		}
+	}
+	LuaAssert(L.G().tmUData == nil)
+	LUAIUserStateClose(L)
+	L.closeState()
+}
+
+// 对应C函数：`static void callallgcTM (lua_State *L, void *ud)'
+func callAllGcTM(L *LuaState, ud interface{}) {
+	// todo: callAllGcTM
 }

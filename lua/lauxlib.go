@@ -62,7 +62,7 @@ func (L *LuaState) LDoFile(filename string) int {
 // 对应C函数：`LUALIB_API int luaL_loadfile (lua_State *L, const char *filename)'
 func (L *LuaState) LLoadFile(filename []byte) int {
 	var lf LoadF
-	fnameIndex := L.GetTop() + 1 /* index of filename on the stack */
+	fNameIndex := L.GetTop() + 1 /* index of filename on the stack */
 	lf.extraLine = 0
 	if filename == nil {
 		L.PushLiteral("=stdin")
@@ -72,7 +72,7 @@ func (L *LuaState) LLoadFile(filename []byte) int {
 		var err error
 		lf.f, err = fopen(string(filename), os.O_RDONLY)
 		if lf.f == nil {
-			return errFile(L, "open", fnameIndex, err)
+			return errFile(L, "open", fNameIndex, err)
 		}
 	}
 	c, _ := lf.f.getc()
@@ -89,7 +89,7 @@ func (L *LuaState) LLoadFile(filename []byte) int {
 		var err error
 		lf.f, err = freopen(string(filename), os.O_RDONLY, lf.f) /* reopen in binary mode */
 		if lf.f == nil || err != nil {
-			return errFile(L, "reopen", fnameIndex, err)
+			return errFile(L, "reopen", fNameIndex, err)
 		}
 		/* skip eventual `#!...' */
 		for !lf.f.EOF() && c != LUA_SIGNATURE[0] {
@@ -104,10 +104,10 @@ func (L *LuaState) LLoadFile(filename []byte) int {
 		lf.f.fclose() /* close file (even in case of errors) */
 	}
 	if readStatus != nil {
-		L.SetTop(fnameIndex) /* ignore results from `lua_load' */
-		return errFile(L, "read", fnameIndex, readStatus)
+		L.SetTop(fNameIndex) /* ignore results from `lua_load' */
+		return errFile(L, "read", fNameIndex, readStatus)
 	}
-	L.Remove(fnameIndex)
+	L.Remove(fNameIndex)
 	return status
 }
 
@@ -166,4 +166,10 @@ func LNewState() *LuaState {
 		L.AtPanic(_panic)
 	}
 	return L
+}
+
+// LTypeName
+// 对应C函数：`luaL_typename(L,i)'
+func (L *LuaState) LTypeName(idx int) string {
+	return L.TypeName(L.Type(idx))
 }

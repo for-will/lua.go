@@ -48,7 +48,7 @@ type expdesc struct {
 	f    int /* patch list of `exit when false' */
 }
 
-type expkind = int
+type expkind int
 
 const (
 	VVOID expkind = iota /* no value */
@@ -159,7 +159,7 @@ func (ls *LexState) pushClosure(fn *FuncState, v *expdesc) {
 	v.initExp(VRELOCABLE, fs.kCodeABx(OP_CLOSURE, 0, fs.np-1))
 	for i := 0; i < fn.f.nUps; i++ {
 		var o OpCode
-		if expkind(fn.upvalues[i].k) == VLOCAL {
+		if fn.upvalues[i].k == VLOCAL {
 			o = OP_MOVE
 		} else {
 			o = OP_GETUPVAL
@@ -197,7 +197,7 @@ func (ls *LexState) leaveLevel() {
 }
 
 // 对应C函数：`static int block_follow (int token)'
-func blockFollow(token int) bool {
+func blockFollow(token tk) bool {
 	switch token {
 	case TK_ELSE, TK_ELSEIF, TK_END, TK_UNTIL, TK_EOS:
 		return true
@@ -331,7 +331,7 @@ func (ls *LexState) subExpr(v *expdesc, limit int) BinOpr {
 }
 
 // 对应C函数：`static UnOpr getunopr (int op)'
-func getunopr(op int) UnOpr {
+func getunopr(op tk) UnOpr {
 	switch op {
 	case TK_NOT:
 		return OPR_NOT
@@ -345,7 +345,7 @@ func getunopr(op int) UnOpr {
 }
 
 // 对应C函数：`static BinOpr getbinopr (int op)'
-func getbinopr(op int) BinOpr {
+func getbinopr(op tk) BinOpr {
 	switch op {
 	case '+':
 		return OPR_ADD
@@ -555,20 +555,20 @@ func (fs *FuncState) lastListField(cc *ConsControl) {
 }
 
 // 对应C函数：`static void checknext (LexState *ls, int c)'
-func (ls *LexState) checkNextX(c int) {
+func (ls *LexState) checkNextX(c tk) {
 	ls.check(c)
 	ls.xNext()
 }
 
 // 对应C函数：`static void check (LexState *ls, int c)'
-func (ls *LexState) check(c int) {
+func (ls *LexState) check(c tk) {
 	if ls.t.token != c {
 		ls.errorExpected(c)
 	}
 }
 
 // 对应C函数：`static void error_expected (LexState *ls, int token)'
-func (ls *LexState) errorExpected(token int) {
+func (ls *LexState) errorExpected(token tk) {
 	ls.xSyntaxError(
 		string(ls.L.oPushFString(LUA_QS+" expected", ls.xToken2str(token))))
 }
@@ -586,7 +586,7 @@ func (fs *FuncState) errorLimit(limit int, what string) {
 }
 
 // 对应C函数：`static int testnext (LexState *ls, int c)'
-func (ls *LexState) testNext(c int) bool {
+func (ls *LexState) testNext(c tk) bool {
 	if ls.t.token == c {
 		ls.xNext()
 		return true
@@ -624,7 +624,7 @@ func (ls *LexState) yIndex(v *expdesc) {
 }
 
 // 对应C函数：`static void check_match (LexState *ls, int what, int who, int where)'
-func (ls *LexState) checkMatch(what int, who int, where int) {
+func (ls *LexState) checkMatch(what tk, who tk, where int) {
 	if !ls.testNext(what) {
 		if where == ls.lineNumber {
 			ls.errorExpected(what)

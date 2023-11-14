@@ -112,7 +112,8 @@ func (S *loadState) LoadString() *TString {
 	} else {
 		s := S.b.OpenSpace(size)
 		S.LoadBlock(s[:size])
-		return S.L.sNewLStr(s[:size-1]) /* remove trailing '\0' */
+		// todo: 是否需要移除末尾的'\0'??
+		return S.L.sNewStr(s[:size-1]) /* remove trailing '\0' */
 	}
 }
 
