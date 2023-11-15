@@ -1,10 +1,11 @@
 --print("hello")
 --
 --local a = "Hello"
-local b = "World"
+--local b = "World"
 --
 --print('Hello' .. ' ' .. 'World' .. '!!')
-print(b)
+--n = 100
+--print(1 + n)
 
 --print(123)
 --print("Hello")
@@ -15,6 +16,6 @@ print(b)
 --print('$' .. 100 + 200)
 --print("Hello " .. "World")
 
-
-
-
+local a = 'Hello'
+local b = 'World'
+print(a .. ' ' .. b .. '!!')

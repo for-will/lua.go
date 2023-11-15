@@ -684,6 +684,7 @@ func (ls *LexState) registerLocalVar(varName *TString) int {
 		f.locVars[oldSize].varName = nil
 		oldSize++
 	}
+	f.locVars[fs.nLocVars].varName = varName
 	ls.L.cObjBarrier(f, varName)
 	fs.nLocVars++
 	return fs.nLocVars - 1
