@@ -101,7 +101,7 @@ func (i *Instruction) GetArgB() int {
 // 对应C函数：`SETARG_B(i,b)'
 func (i *Instruction) SetArgB(b int) {
 	*i = (*i & MASK0(SIZE_B, POS_B)) |
-		((Instruction(b) << POS_Bx) & MASK1(SIZE_B, POS_B))
+		((Instruction(b) << POS_B) & MASK1(SIZE_B, POS_B))
 }
 
 // GetArgC

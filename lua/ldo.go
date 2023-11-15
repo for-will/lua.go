@@ -182,7 +182,7 @@ func (L *LuaState) dPoscall(firstResult int) int {
 	return wanted - LUA_MULTRET /* 0 iff wanted == LUA_MULTRET */
 }
 
-// Call a function (C or Lua). The function to be called is at *func.
+// Call a function (C or Lua). The function to be called is at *fn.
 // The arguments are on the stack, right after the function.
 // When returns, all the results are on the stack, starting at the original
 // function position.
@@ -229,7 +229,7 @@ func (L *LuaState) dPrecall(fn StkId, nResults int) int {
 			p    = cl.p
 		)
 
-		L.dCheckStack(int(p.maxStackSize))
+		L.dCheckStack(p.maxStackSize)
 		fn = restorestack(L, funcr)
 		if p.isVarArg == 0 { /* no varargs? */
 			base = funcr + 1
@@ -237,7 +237,7 @@ func (L *LuaState) dPrecall(fn StkId, nResults int) int {
 				L.top = base + p.numParams
 			}
 		} else { /* vararg function */
-			nargs := L.top - funcr - 1 // -1 因为函数本身占一个
+			nargs := L.top - funcr - 1 // top之下是函数参数；函数参数之下是函数；
 			base = adjust_varargs(L, p, nargs)
 			fn = restorestack(L, funcr) /* previous call may change the stack */
 		}

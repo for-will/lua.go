@@ -1,10 +1,10 @@
 --print("hello")
 --
 --local a = "Hello"
---local b = "World"
+local b = "World"
 --
-print('Hello' .. 'World' .. '!')
---print(b)
+--print('Hello' .. ' ' .. 'World' .. '!!')
+print(b)
 
 --print(123)
 --print("Hello")
