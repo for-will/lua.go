@@ -122,18 +122,12 @@ func (ls *LexState) closeFunc() {
 	var f = fs.f
 	ls.removeVars(0)
 	fs.kRet(0, 0) /* final return */
-	mReallocVector(L, &f.code, f.sizeCode, fs.pc)
-	f.sizeCode = fs.pc
-	mReallocVector(L, &f.lineInfo, f.sizeLineInfo, fs.pc)
-	f.sizeLineInfo = fs.pc
-	mReallocVector(L, &f.k, f.sizeK, fs.nk)
-	f.sizeK = fs.nk
-	mReallocVector(L, &f.p, f.sizeP, fs.np)
-	f.sizeP = fs.np
-	mReallocVector(L, &f.locVars, f.sizeLocVars, fs.nLocVars)
-	f.sizeLocVars = fs.nLocVars
-	mReallocVector(L, &f.upValues, f.sizeUpValues, f.nUps)
-	f.sizeUpValues = f.nUps
+	f.code.ReAlloc(fs.pc, L)
+	f.lineInfo.ReAlloc(fs.pc, L)
+	f.k.ReAlloc(fs.nk, L)
+	f.p.ReAlloc(fs.np, L)
+	f.locVars.ReAlloc(fs.nLocVars, L)
+	f.upValues.ReAlloc(f.nUps, L)
 	LuaAssert(f.gCheckCode())
 	LuaAssert(fs.bl == nil)
 	ls.fs = fs.prev
@@ -148,9 +142,9 @@ func (ls *LexState) closeFunc() {
 func (ls *LexState) pushClosure(fn *FuncState, v *expdesc) {
 	var fs = ls.fs
 	var f = fs.f
-	var oldSize = f.sizeP
-	mGrowVector(ls.L, &f.p, fs.np, &f.sizeP, MAXARG_Bx, "constant table overflow")
-	for i := oldSize; i < f.sizeP; i++ {
+	var oldSize = f.p.Size()
+	f.p.Grow(fs.L, fs.np, MAXARG_Bx, "constant table overflow")
+	for i := oldSize; i < f.p.Size(); i++ {
 		f.p[i] = nil
 	}
 	f.p[fs.np] = fn.f
@@ -677,10 +671,11 @@ func (ls *LexState) newLocalVar(name *TString, n int) {
 func (ls *LexState) registerLocalVar(varName *TString) int {
 	var fs = ls.fs
 	var f = fs.f
-	var oldSize = f.sizeLocVars
-	mGrowVector(ls.L, &f.locVars, fs.nLocVars, &f.sizeLocVars,
-		SHRT_MAX, "too many local variables")
-	for oldSize < f.sizeLocVars {
+	var oldSize = f.locVars.Size()
+	// mGrowVector(ls.L, &f.locVars, fs.nLocVars, &f.sizeLocVars,
+	// 	SHRT_MAX, "too many local variables")
+	f.locVars.Grow(ls.L, fs.nLocVars, SHRT_MAX, "too many local variables")
+	for oldSize < f.locVars.Size() {
 		f.locVars[oldSize].varName = nil
 		oldSize++
 	}
@@ -863,7 +858,7 @@ func (fs *FuncState) markUpval(level int) {
 // 对应C函数：`static int indexupvalue (FuncState *fs, TString *name, expdesc *v)'
 func (fs *FuncState) indexUpValue(name *TString, v *expdesc) int {
 	var f = fs.f
-	var oldSize = f.sizeUpValues
+	var oldSize = f.upValues.Size()
 	for i := 0; i < f.nUps; i++ {
 		if fs.upvalues[i].k == v.k && fs.upvalues[i].info == v.s.info {
 			LuaAssert(f.upValues[i] == name)
@@ -872,8 +867,8 @@ func (fs *FuncState) indexUpValue(name *TString, v *expdesc) int {
 	}
 	/* new one */
 	fs.yCheckLimit(f.nUps+1, LUAI_MAXUPVALUES, "upvalues")
-	mGrowVector(fs.L, &f.upValues, f.nUps, &f.sizeUpValues, MAX_INT, "")
-	for i := oldSize; i < f.sizeUpValues; i++ {
+	f.upValues.Grow(fs.L, f.nUps, MAX_INT, "")
+	for i := oldSize; i < f.upValues.Size(); i++ {
 		f.upValues[i] = nil
 	}
 	f.upValues[f.nUps] = name

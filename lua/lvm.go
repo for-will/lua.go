@@ -44,7 +44,7 @@ func (L *LuaState) vConcat(total int, last int) {
 			for n = 1; n < total && toString(L, top.Ptr(-n-1)); n++ {
 				l := top.Ptr(-n - 1).StringValue().Len
 				if l >= int(MAX_SIZET)-tl {
-					L.gRunError("string length overflow")
+					L.DbgRunError("string length overflow")
 				}
 				tl += l
 			}
@@ -125,7 +125,7 @@ func (L *LuaState) vSetTable(t *TValue, key *TValue, val StkId) {
 		}
 		t = tm /* else repeat with `tm' */
 	}
-	L.gRunError("loop in settable")
+	L.DbgRunError("loop in settable")
 }
 
 // 对应C函数：`static int call_binTM (lua_State *L, const TValue *p1, const TValue *p2, StkId res, TMS event)'
@@ -188,7 +188,7 @@ func (L *LuaState) vGetTable(t *TValue, key *TValue, val StkId) {
 		}
 		t = tm /* else repreat with `tm' */
 	}
-	L.gRunError("loop in gettable")
+	L.DbgRunError("loop in gettable")
 }
 
 // 对应C函数：`void luaV_execute (lua_State *L, int nexeccalls)'

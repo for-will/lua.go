@@ -1,6 +1,9 @@
 package golua
 
-import "unsafe"
+import (
+	"luar/lua/mem"
+	"unsafe"
+)
 
 /* results from luaD_precall */
 const (
@@ -66,7 +69,7 @@ func (L *LuaState) dSetErrorObj(errCode int, oldTopIdx int) {
 	oldTop := &L.stack[oldTopIdx]
 	switch errCode {
 	case LUA_ERRMEM:
-		oldTop.SetString(L, L.sNewLiteral(MEMERRMSG))
+		oldTop.SetString(L, L.sNewLiteral(mem.MEMERRMSG))
 	case LUA_ERRERR:
 		oldTop.SetString(L, L.sNewLiteral("error in error handling"))
 	case LUA_ERRSYNTAX, LUA_ERRRUN:
@@ -191,7 +194,7 @@ func (L *LuaState) dCall(fn StkId, nResults int) {
 	L.nCCalls++
 	if L.nCCalls >= LUAI_MAXCCALLS {
 		if L.nCCalls == LUAI_MAXCCALLS {
-			L.gRunError("C stack overflow")
+			L.DbgRunError("C stack overflow")
 		} else if L.nCCalls >= LUAI_MAXCCALLS+LUAI_MAXCCALLS>>3 {
 			L.dThrow(LUA_ERRERR) /* error while handing stack error */
 		}
@@ -368,7 +371,7 @@ func growCI(L *LuaState) int {
 	} else {
 		L.dReallocCI(2 * L.sizeCi)
 		if L.sizeCi > LUAI_MAXCCALLS {
-			L.gRunError("stack overflow")
+			L.DbgRunError("stack overflow")
 		}
 	}
 	L.ci++

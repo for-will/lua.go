@@ -1,6 +1,7 @@
 package golua
 
 import (
+	"luar/lua/mem"
 	"math"
 	"reflect"
 	"unsafe"
@@ -54,14 +55,14 @@ func (n *Node) SetNext(next *Node) {
 
 type Table struct {
 	CommonHeader
-	flags     lu_byte           // 1<<p means tagmethod(p) is not present
-	lSizeNode lu_byte           // log2 of size of `node` array
-	metatable *Table            /* */
-	array     LuaVector[TValue] /* */
-	node      []Node            /* */
-	lastFree  int               // any free position is before this position
-	gcList    GCObject          /* */
-	sizeArray int               // size of `array` array
+	flags     lu_byte         // 1<<p means tagmethod(p) is not present
+	lSizeNode lu_byte         // log2 of size of `node` array
+	metatable *Table          /* */
+	array     mem.Vec[TValue] /* */
+	node      mem.Vec[Node]   /* */
+	lastFree  int             // any free position is before this position
+	gcList    GCObject        /* */
+	sizeArray int             // size of `array` array
 }
 
 // const NumInts = int(unsafe.Sizeof(LuaNumber(0)) / unsafe.Sizeof(int(0)))
@@ -93,14 +94,17 @@ func (t *Table) HashPow2(n uint64) *Node {
 // HashMod 计算hash
 // for some types, it is better to avoid modulus by power of 2, as
 // they tend to have many 2 factors.
+// 对应C函数：`hashmod(t,n)'
 func (t *Table) HashMod(n uint64) *Node {
 	n %= (t.SizeNode() - 1) | 1
 	return t.GetNode(n)
 }
 
+// HashNum
+// hash for lua_Numbers
+// 对应C函数：`static Node *hashnum (const Table *t, lua_Number n)'
 func (t *Table) HashNum(n LuaNumber) *Node {
-	if n == 0 {
-		// avoid problems with -0
+	if n == 0 { /* avoid problems with -0 */
 		return t.GetNode(0)
 	}
 	// 在64位系统下uint和lua_Number(float64)都是64位，直接计算hash
@@ -146,7 +150,8 @@ func (t *Table) MainPosition(key *TValue) *Node {
 }
 
 // returns the index for `key` is `key` is an appropriate key to live in
-// the array part of the table, -1 otherwise. 对应C函数：`static int arrayindex (const TValue *key)'
+// the array part of the table, -1 otherwise.
+// 对应C函数：`static int arrayindex (const TValue *key)'
 func arrayIndex(key *TValue) int {
 	if key.IsNumber() {
 		n := key.NumberValue()
@@ -180,8 +185,8 @@ func (t *Table) findIndex(L *LuaState, key StkId) int {
 			}
 			n = n.GetNext()
 		}
-		L.gRunError("invalid key to 'next'") /* key not found */
-		return 0                             /* to avoid warnings */
+		L.DbgRunError("invalid key to 'next'") /* key not found */
+		return 0                               /* to avoid warnings */
 	}
 }
 
@@ -290,9 +295,8 @@ func (t *Table) numUseHash(nums []int) (totaluse int, ause int) {
 }
 
 // 对应C函数 `static void setarrayvector (lua_State *L, Table *t, int size) `
-func (t *Table) setArrayVector(size int) {
-	// mReallocVector(nil, &t.array, t.sizeArray, size)
-	t.array.ReAlloc(size)
+func (t *Table) setArrayVector(size int, h mem.ErrorHandler) {
+	t.array.ReAlloc(size, h)
 	for i := t.sizeArray; i < size; i++ {
 		t.array[i].SetNil()
 	}
@@ -302,19 +306,19 @@ func (t *Table) setArrayVector(size int) {
 // 对应C函数 `static void setnodevector (lua_State *L, Table *t, int size)`
 func (t *Table) setNodeVector(L *LuaState, size int) {
 
-	var lsize int
+	var lSize int
 
 	// no elements to hash part?
 	if size == 0 {
 		t.node = DummyNodes[:]
-		lsize = 0
+		lSize = 0
 	} else {
-		lsize = CeilLog2(uint64(size))
-		if lsize > MAXBITS {
-			L.gRunError("table overflow")
+		lSize = CeilLog2(uint64(size))
+		if lSize > MAXBITS {
+			L.DbgRunError("table overflow")
 		}
-		size = 1 << lsize
-		t.node = make([]Node, size)
+		size = 1 << lSize
+		t.node.Init(size, L)
 		for i := 0; i < size; i++ {
 			n := t.GetNode(uint64(i))
 			n.SetNext(nil)
@@ -322,7 +326,7 @@ func (t *Table) setNodeVector(L *LuaState, size int) {
 			n.GetVal().SetNil()
 		}
 	}
-	t.lSizeNode = lu_byte(lsize)
+	t.lSizeNode = lu_byte(lSize)
 	t.lastFree = size // all positions are free
 }
 
@@ -330,43 +334,42 @@ func (t *Table) setNodeVector(L *LuaState, size int) {
 // 对应C函数：`static void resize (lua_State *L, Table *t, int nasize, int nhsize)'
 func (t *Table) resize(L *LuaState, nasize int, nhsize int) {
 	var (
-		oldasize = t.sizeArray
-		oldhsize = t.lSizeNode
-		nold     = t.node // save old hash
+		oldArraySize = t.sizeArray
+		oldHashSize  = t.lSizeNode
+		oldNodes     = t.node // save old hash
 	)
-	if nasize > oldasize { /* array part must grow? */
-		t.setArrayVector(nasize)
+	if nasize > oldArraySize { /* array part must grow? */
+		t.setArrayVector(nasize, L)
 	}
 	/* create new hash part with appropriate size */
 	t.setNodeVector(L, nhsize)
-	if nasize < oldasize { /* array part must shrink? */
+	if nasize < oldArraySize { /* array part must shrink? */
 		t.sizeArray = nasize
 		/* re-insert elements from vanishing slice */
-		for i := nasize; i < oldasize; i++ {
+		for i := nasize; i < oldArraySize; i++ {
 			if !t.array[i].IsNil() {
 				v := t.SetByNum(L, i+1)
 				SetObj(L, v, &t.array[i])
 			}
 		}
 		/* shrink array */
-		narray := make([]TValue, nasize)
-		copy(narray, t.array)
-		t.array = narray
+		t.array.ReAlloc(nasize, L)
 	}
 	/* re-insert elements from hash part */
-	for i := 1<<oldhsize - 1; i >= 0; i-- {
-		old := &nold[i]
+	for i := 1<<oldHashSize - 1; i >= 0; i-- {
+		var old = &oldNodes[i]
 		if !old.GetVal().IsNil() {
 			v := t.Set(L, old.GetKeyVal())
 			SetObj(L, v, old.GetVal())
 		}
 	}
 
-	/* gc回收nold的内存，不用作其他处理 */
+	/* gc回收oldNodes的内存，不用作其他处理 */
+	// oldNodes.Free(L)
 }
 
 // ResizeArray 重新分配数组部分的大小
-// 同C函数 `void luaH_resizearray (lua_State *L, Table *t, int nasize)`
+// 对应C函数 `void luaH_resizearray (lua_State *L, Table *t, int nasize)`
 func (t *Table) ResizeArray(L *LuaState, nasize int) {
 	var nsize = 0
 	if &t.node[0] != DummyNode {
@@ -412,7 +415,7 @@ func (L *LuaState) hNew(narray int, nhash int) *Table {
 		node:      DummyNodes[:],
 	}
 	L.cLink(t, LUA_TTABLE)
-	t.setArrayVector(narray)
+	t.setArrayVector(narray, L)
 	t.setNodeVector(L, nhash)
 	return t
 }
@@ -542,9 +545,9 @@ func (t *Table) Set(L *LuaState, key *TValue) *TValue {
 		return p
 	} else {
 		if key.IsNil() {
-			L.gRunError("table index is nil")
+			L.DbgRunError("table index is nil")
 		} else if key.IsNumber() && math.IsNaN(key.NumberValue()) {
-			L.gRunError("table index is NaN")
+			L.DbgRunError("table index is NaN")
 		}
 		return t.newKey(L, key)
 	}

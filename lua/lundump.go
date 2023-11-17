@@ -121,8 +121,7 @@ func (S *loadState) LoadString() *TString {
 // 对应C函数：`static void LoadCode(LoadState* S, Proto* f)'
 func (S *loadState) LoadCode(f *Proto) {
 	var n = S.LoadInt()
-	f.code = make([]Instruction, n)
-	f.sizeCode = n
+	f.code.Init(n, S.L)
 	S.LoadVector(f.code, n, int(unsafe.Sizeof(Instruction(0))))
 }
 
@@ -130,8 +129,7 @@ func (S *loadState) LoadCode(f *Proto) {
 // 对应C函数：`static void LoadConstants(LoadState* S, Proto* f)'
 func (S *loadState) LoadConstants(f *Proto) {
 	n := S.LoadInt()
-	f.k = make([]TValue, n)
-	f.sizeK = n
+	f.k.Init(n, S.L)
 	for i := 0; i < n; i++ {
 		f.k[i].SetNil()
 	}
@@ -152,8 +150,7 @@ func (S *loadState) LoadConstants(f *Proto) {
 		}
 	}
 	n = S.LoadInt()
-	f.p = make([]*Proto, n)
-	f.sizeP = n
+	f.p.Init(n, S.L)
 	for i := 0; i < n; i++ {
 		f.p[i] = S.LoadFunction(f.source)
 	}
@@ -163,20 +160,17 @@ func (S *loadState) LoadConstants(f *Proto) {
 // 对应C函数：`static void LoadDebug(LoadState* S, Proto* f)'
 func (S *loadState) LoadDebug(f *Proto) {
 	n := S.LoadInt()
-	f.lineInfo = make([]int, n)
-	f.sizeLineInfo = n
+	f.lineInfo.Init(n, S.L)
 	S.LoadVector(f.lineInfo, n, int(unsafe.Sizeof(int(0))))
 	n = S.LoadInt()
-	f.locVars = make([]LocVar, n)
-	f.sizeLocVars = n
+	f.locVars.Init(n, S.L)
 	for i := 0; i < n; i++ {
 		f.locVars[i].varName = S.LoadString()
 		f.locVars[i].startPc = S.LoadInt()
 		f.locVars[i].endPc = S.LoadInt()
 	}
 	n = S.LoadInt()
-	f.upValues = make([]*TString, n)
-	f.sizeUpValues = n
+	f.upValues.Init(n, S.L)
 	for i := 0; i < n; i++ {
 		f.upValues[i] = S.LoadString()
 	}

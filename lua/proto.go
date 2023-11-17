@@ -1,28 +1,25 @@
 package golua
 
-import "unsafe"
+import (
+	"luar/lua/mem"
+	"unsafe"
+)
 
 // Proto Function Prototypes
 // 对应C结构体：`struct Proto`
 type Proto struct {
 	CommonHeader
-	k               []TValue      /* constants used by the function */
-	code            []Instruction /* */
-	p               []*Proto      /* functions defined inside the function */
-	lineInfo        []int         /* map from opcodes to source lines */
-	locVars         []LocVar      //
-	upValues        []*TString    /* upvalue names*/
-	source          *TString      /* */
-	sizeUpValues    int           /* */
-	sizeK           int           /* size of `k` */
-	sizeCode        int           /* */
-	sizeLineInfo    int           /* */
-	sizeP           int           /* size of `p` */
-	sizeLocVars     int           /* */
-	lineDefined     int           /* */
-	lastLineDefined int           /* */
-	gcList          *GCObject     /* */
-	nUps            int           /* number of up-values */
+	k               mem.Vec[TValue]      /* constants used by the function */
+	code            mem.Vec[Instruction] /* */
+	p               mem.Vec[*Proto]      /* functions defined inside the function */
+	lineInfo        mem.Vec[int]         /* map from opcodes to source lines */
+	locVars         mem.Vec[LocVar]      //
+	upValues        mem.Vec[*TString]    /* upvalue names*/
+	source          *TString             /* */
+	lineDefined     int                  /* */
+	lastLineDefined int                  /* */
+	gcList          *GCObject            /* */
+	nUps            int                  /* number of up-values */
 	numParams       int
 	isVarArg        lu_byte
 	maxStackSize    int

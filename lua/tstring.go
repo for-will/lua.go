@@ -2,6 +2,7 @@ package golua
 
 import (
 	"bytes"
+	"luar/lua/mem"
 	"unsafe"
 )
 
@@ -78,7 +79,8 @@ func (L *LuaState) sResize(newSize uint64) {
 func (L *LuaState) newStr(str []byte, h uint64) *TString {
 	var l = len(str)
 	if l > int(MAX_SIZET)-int(unsafe.Sizeof(TString{})) {
-		L.mTooBig()
+		// L.MemTooBig()
+		mem.ErrTooBig(L)
 	}
 	ts := &TString{
 		CommonHeader: CommonHeader{

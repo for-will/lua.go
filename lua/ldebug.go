@@ -10,7 +10,9 @@ func ResetHookCount(L *LuaState) {
 	L.hookCount = L.baseHootCount
 }
 
-func (L *LuaState) gRunError(format string, args ...interface{}) {
+// DbgRunError
+// 对应C函数：`void luaG_runerror (lua_State *L, const char *fmt, ...)'
+func (L *LuaState) DbgRunError(format string, args ...interface{}) {
 	// todo: gRunError
 	log.Printf(format, args...)
 }

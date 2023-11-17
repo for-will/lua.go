@@ -151,12 +151,10 @@ func (fs *FuncState) kCode(i Instruction, line int) int {
 	var f = fs.f
 	fs.dischargeJpc() /* `pc' will change */
 	/* put new instruction in code array */
-	mGrowVector(fs.L, &f.code, fs.pc, &f.sizeCode,
-		MAX_INT, "code size overflow")
+	f.code.Grow(fs.L, fs.pc, MAX_INT, "code size overflow")
 	f.code[fs.pc] = i
 	/* save corresponding line information */
-	mGrowVector(fs.L, &f.lineInfo, fs.pc, &f.sizeLineInfo,
-		MAX_INT, "code size overflow")
+	f.lineInfo.Grow(fs.L, fs.pc, MAX_INT, "code size overflow")
 	f.lineInfo[fs.pc] = line
 	fs.pc++
 	return fs.pc - 1
@@ -384,14 +382,14 @@ func (fs *FuncState) addk(k *TValue, v *TValue) int {
 	var L = fs.L
 	var idx = fs.h.Set(L, k)
 	var f = fs.f
-	var oldSize = f.sizeK
+	var oldSize = f.k.Size()
 	if idx.IsNumber() {
 		LuaAssert(oRawEqualObj(&fs.f.k[int(idx.NumberValue())], v))
 		return int(idx.NumberValue())
 	} else { /* constant not found; create a new entry */
 		idx.SetNumber(LuaNumber(fs.nk))
-		mGrowVector(L, &f.k, fs.nk, &f.sizeK, MAXARG_Bx, "constant table overflow")
-		for ; oldSize < f.sizeK; oldSize++ {
+		f.k.Grow(L, fs.nk, MAXARG_Bx, "constant table overflow")
+		for ; oldSize < f.k.Size(); oldSize++ {
 			f.k[oldSize].SetNil()
 		}
 		f.k[fs.nk].SetObj(L, v)

@@ -1,6 +1,9 @@
 package golua
 
-import "unsafe"
+import (
+	"luar/lua/mem"
+	"unsafe"
+)
 
 const (
 	EXTRA_STACK      = 5 /* extra stack space to handle TM calls and some other extras */
@@ -203,7 +206,7 @@ func f_luaopen(L *LuaState, ud interface{}) {
 	L.sResize(MINSTRTABSIZE)                  /* initial size of string table */
 	L.tInit()
 	L.xInit()
-	L.sNewLiteral(MEMERRMSG).Fix()
+	L.sNewLiteral(mem.MEMERRMSG).Fix()
 	g.GCThreshold = 4 * g.totalBytes
 }
 
