@@ -127,18 +127,18 @@ func (fs *FuncState) kDischargeVars(e *expdesc) {
 }
 
 // 对应C函数：`int luaK_codeABC (FuncState *fs, OpCode o, int a, int b, int c)'
-func (fs *FuncState) kCodeABC(o OpCode, a int, b int, c int) int {
-	LuaAssert(getOpMode(o) == iABC)
-	LuaAssert(getBMode(o) != OpArgN || b == 0)
-	LuaAssert(getCMode(o) != OpArgN || c == 0)
-	return fs.kCode(CreateABC(o, a, b, c), fs.ls.lastLine)
+func (fs *FuncState) kCodeABC(op OpCode, a int, b int, c int) int {
+	LuaAssert(op.getOpMode() == iABC)
+	LuaAssert(getBMode(op) != OpArgN || b == 0)
+	LuaAssert(getCMode(op) != OpArgN || c == 0)
+	return fs.kCode(CreateABC(op, a, b, c), fs.ls.lastLine)
 }
 
 // 对应C函数：`int luaK_codeABx (FuncState *fs, OpCode o, int a, unsigned int bc)'
-func (fs *FuncState) kCodeABx(o OpCode, a int, bc int) int {
-	LuaAssert(getOpMode(o) == iABx || getOpMode(o) == iAsBx)
-	LuaAssert(getCMode(o) == OpArgN)
-	return fs.kCode(CreateABx(o, a, bc), fs.ls.lastLine)
+func (fs *FuncState) kCodeABx(op OpCode, a int, bc int) int {
+	LuaAssert(op.getOpMode() == iABx || op.getOpMode() == iAsBx)
+	LuaAssert(getCMode(op) == OpArgN)
+	return fs.kCode(CreateABx(op, a, bc), fs.ls.lastLine)
 }
 
 // 对应C函数：`luaK_codeAsBx(fs,o,A,sBx)'
@@ -516,9 +516,9 @@ func (fs *FuncState) kExp2RK(e *expdesc) int {
 			if e.k == VNIL {
 				e.s.info = fs.nilK()
 			} else if e.k == VKNUM {
-				fs.kNumberK(e.nval)
+				e.s.info = fs.kNumberK(e.nval)
 			} else {
-				fs.boolK(e.k == VTRUE)
+				e.s.info = fs.boolK(e.k == VTRUE)
 			}
 			e.k = VK
 			return RKASK(e.s.info)

@@ -238,7 +238,7 @@ func (L *LuaState) dPrecall(fn StkId, nResults int) int {
 			}
 		} else { /* vararg function */
 			nargs := L.top - funcr - 1 // top之下是函数参数；函数参数之下是函数；
-			base = adjust_varargs(L, p, nargs)
+			base = L.adjustVarargs(p, nargs)
 			fn = restorestack(L, funcr) /* previous call may change the stack */
 		}
 		ci := L.incCI() /* now `enter' new function */
@@ -308,10 +308,10 @@ func (L *LuaState) dCallHook(event int, line int) {
 }
 
 // 对应C函数：`static StkId adjust_varargs (lua_State *L, Proto *p, int actual)'
-func adjust_varargs(L *LuaState, p *Proto, actual int) int {
+func (L *LuaState) adjustVarargs(p *Proto, actual int) int {
 	var (
 		nFixArgs        = p.numParams
-		htab     *Table = nil
+		hTab     *Table = nil
 	)
 	for ; actual < nFixArgs; actual++ {
 		L.Top().SetNil()
@@ -322,14 +322,14 @@ func adjust_varargs(L *LuaState, p *Proto, actual int) int {
 			nvar := actual - nFixArgs /* number of extra arguments */
 			LuaAssert(p.isVarArg&VARARG_HASARG != 0)
 			L.cCheckGC()
-			htab = L.hNew(nvar, 1)      /* create `arg' table */
+			hTab = L.hNew(nvar, 1)      /* create `arg' table */
 			for i := 0; i < nvar; i++ { /* put extra argumetns into `arg' table */
-				l := htab.SetByNum(L, i+1)
+				l := hTab.SetByNum(L, i+1)
 				r := L.AtTop(-nvar + i)
 				SetObj(L, l, r)
 			}
 			/* store counter in field `n' */
-			htab.SetByStr(L, L.sNewLiteral("n")).SetNumber(LuaNumber(nvar))
+			hTab.SetByStr(L, L.sNewLiteral("n")).SetNumber(LuaNumber(nvar))
 		}
 	}
 	/* move fixed parameters to final position */
@@ -340,9 +340,9 @@ func adjust_varargs(L *LuaState, p *Proto, actual int) int {
 		fixed.Ptr(i).SetNil()
 	}
 	/* add `arg' parameter */
-	if htab != nil {
-		L.PushTable(htab)
-		LuaAssert(htab.IsWhite())
+	if hTab != nil {
+		L.PushTable(hTab)
+		LuaAssert(hTab.IsWhite())
 	}
 	return base
 }

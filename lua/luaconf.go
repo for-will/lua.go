@@ -117,3 +117,5 @@ var (
 )
 
 const SHRT_MAX = math.MaxInt16
+
+const DEBUG = false /* 设置为true将会打印字节码的反汇编信息等其它调试信息 */

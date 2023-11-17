@@ -57,3 +57,15 @@ func mReallocV[T any](L *LuaState, b []T, n int, e int) []T {
 	L.mTooBig()
 	return nil
 }
+
+type LuaVector[T any] []T
+
+// ReAlloc
+// 对应C函数：`luaM_reallocvector(L, v,oldn,n,t)'
+func (v *LuaVector[T]) ReAlloc(n int) {
+	if uintptr(n+1) <= uintptr(MAX_SIZET)/unsafe.Sizeof(*(*T)(nil)) {
+		var v2 = make([]T, n)
+		copy(v2, *v)
+		*v = v2
+	}
+}

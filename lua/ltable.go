@@ -6,7 +6,10 @@ import (
 	"unsafe"
 )
 
-const MAXBITS = 26
+const (
+	MAXBITS  = 26
+	MAXASIZE = 1 << MAXBITS /* max size of array part is 2^MAXBITS */
+)
 
 type TKey struct {
 	TValue
@@ -51,14 +54,14 @@ func (n *Node) SetNext(next *Node) {
 
 type Table struct {
 	CommonHeader
-	flags     lu_byte // 1<<p means tagmethod(p) is not present
-	lSizeNode lu_byte // log2 of size of `node` array
-	metatable *Table
-	array     []TValue
-	node      []Node
-	lastFree  int // any free position is before this position
-	gcList    GCObject
-	sizeArray int // size of `array` array
+	flags     lu_byte           // 1<<p means tagmethod(p) is not present
+	lSizeNode lu_byte           // log2 of size of `node` array
+	metatable *Table            /* */
+	array     LuaVector[TValue] /* */
+	node      []Node            /* */
+	lastFree  int               // any free position is before this position
+	gcList    GCObject          /* */
+	sizeArray int               // size of `array` array
 }
 
 // const NumInts = int(unsafe.Sizeof(LuaNumber(0)) / unsafe.Sizeof(int(0)))
@@ -143,7 +146,7 @@ func (t *Table) MainPosition(key *TValue) *Node {
 }
 
 // returns the index for `key` is `key` is an appropriate key to live in
-// the array part of the table, -1 otherwise.
+// the array part of the table, -1 otherwise. 对应C函数：`static int arrayindex (const TValue *key)'
 func arrayIndex(key *TValue) int {
 	if key.IsNumber() {
 		n := key.NumberValue()
@@ -232,10 +235,8 @@ func computeSizes(nums []int, nArray int) (na, n int) {
 
 // 对应C函数 `static int countint (const TValue *key, int *nums)`
 func countInt(key *TValue, nums []int) int {
-	k := arrayIndex(key)
-
-	// is `key` an appropriate array index?
-	if 0 < k && k <= MAXBITS {
+	var k = arrayIndex(key)
+	if 0 < k && k <= MAXASIZE { /* is `key` an appropriate array index? */
 		nums[CeilLog2(uint64(k))]++ // count as such
 		return 1
 	}
@@ -290,15 +291,11 @@ func (t *Table) numUseHash(nums []int) (totaluse int, ause int) {
 
 // 对应C函数 `static void setarrayvector (lua_State *L, Table *t, int size) `
 func (t *Table) setArrayVector(size int) {
-	// luaM_reallocvector(L, t->array, t->sizearray, size, TValue);
-
-	// 这里直接重新申请，让go自己管理内存
-	narray := make([]TValue, size)
-	copy(narray, t.array)
+	// mReallocVector(nil, &t.array, t.sizeArray, size)
+	t.array.ReAlloc(size)
 	for i := t.sizeArray; i < size; i++ {
 		t.array[i].SetNil()
 	}
-	t.array = narray
 	t.sizeArray = size
 }
 
@@ -316,7 +313,7 @@ func (t *Table) setNodeVector(L *LuaState, size int) {
 		if lsize > MAXBITS {
 			L.gRunError("table overflow")
 		}
-		size = 1 << size
+		size = 1 << lsize
 		t.node = make([]Node, size)
 		for i := 0; i < size; i++ {
 			n := t.GetNode(uint64(i))
@@ -326,10 +323,11 @@ func (t *Table) setNodeVector(L *LuaState, size int) {
 		}
 	}
 	t.lSizeNode = lu_byte(lsize)
-	t.lastFree = size - 1 // all positions are free
+	t.lastFree = size // all positions are free
 }
 
 // resize 重新构建表，新构建表的数组部分大小为nasize，散列哈希部分的大小为nhsize
+// 对应C函数：`static void resize (lua_State *L, Table *t, int nasize, int nhsize)'
 func (t *Table) resize(L *LuaState, nasize int, nhsize int) {
 	var (
 		oldasize = t.sizeArray
@@ -359,7 +357,7 @@ func (t *Table) resize(L *LuaState, nasize int, nhsize int) {
 	for i := 1<<oldhsize - 1; i >= 0; i-- {
 		old := &nold[i]
 		if !old.GetVal().IsNil() {
-			v := t.Set(L, old.GetVal())
+			v := t.Set(L, old.GetKeyVal())
 			SetObj(L, v, old.GetVal())
 		}
 	}

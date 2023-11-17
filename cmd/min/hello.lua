@@ -16,6 +16,25 @@
 --print('$' .. 100 + 200)
 --print("Hello " .. "World")
 
-local a = 'Hello'
+local function geta()
+    return 'Helllooo'
+end
+--local a = 'Hello'
 local b = 'World'
-print(a .. ' ' .. b .. '!!')
+--local t = {}
+print('say：' .. geta() .. ' ' .. b .. '!!')
+--t[a] = b
+--t[1] = a
+----t[2] = b
+--print(t)
+--print(t[1], #t)
+--local a = 123
+--local b = 100
+--print(a + b)
+
+local t = {}
+t[1] = 100
+t[2] = 200
+print(t[1])
+print(t[2])
+print(t[1] + t[2])

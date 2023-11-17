@@ -257,8 +257,8 @@ const (
 	OpArgK        /* argument is a constant or register/constant */
 )
 
-func getOpMode(m OpCode) OpMode {
-	return OpMode(luaP_opmodes[m] & 3)
+func (op OpCode) getOpMode() OpMode {
+	return OpMode(luaP_opmodes[op] & 3)
 }
 
 func getBMode(m OpCode) OpArgMask {
@@ -365,3 +365,7 @@ func opmode(t lu_byte, a, b, c lu_byte, m OpMode) lu_byte {
 }
 
 const LFIELDS_PER_FLUSH = 50 /* number of list items to accumulate before a SETLIST instruction */
+
+func (op OpCode) String() string {
+	return luaP_opnames[op]
+}

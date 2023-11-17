@@ -3,6 +3,7 @@ package golua
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"unsafe"
 )
 
@@ -241,10 +242,38 @@ reentry: /* entry point */
 		}
 	)
 
+	if DEBUG {
+		fmt.Println("CONSTANTS======================={")
+		for i, value := range k {
+			fmt.Printf("[%d]\t", i)
+			if value.IsNumber() {
+				fmt.Printf("number: %v", value.NumberValue())
+			} else if value.IsString() {
+				fmt.Printf("string: '%s'", string(value.StringValue().GetStr()))
+			} else if value.IsFunction() {
+				var f = value.ClosureValue()
+				if f.IsCFunction() {
+					fmt.Printf("go-func: %p", f.C().f)
+				} else {
+					fmt.Printf("lua-func: %p", f.L().p)
+				}
+			} else {
+				fmt.Printf("%s", L.TypeName(value.gcType()))
+			}
+			fmt.Println()
+		}
+		fmt.Print("CONSTANTS=======================}\n\n")
+	}
+
 	/* main loop of interpreter */
 	for {
 		var i = *pc
 		pc = pc.Ptr(1) // pc++
+
+		if DEBUG {
+			fmt.Printf("%s\n", i.String())
+		}
+
 		if L.hookMask&(LUA_MASKLINE|LUA_MASKCOUNT) != 0 &&
 			(L.DecrHookCount() == 0 || L.hookMask&LUA_MASKLINE != 0) {
 			traceexec(L, pc)
