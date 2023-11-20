@@ -110,6 +110,13 @@ func (i *Instruction) String() string {
 			results = append(results, fmt.Sprintf("R(%d)", j))
 		}
 		desc = "return " + strings.Join(results, ", ")
+	case OP_LOADK: // R(A) := Kst(Bx)
+		desc = fmt.Sprintf("%s := %s", RA(), KBX())
+	case OP_SETGLOBAL: // Gbl[Kst(Bx)] := R(A)
+		desc = fmt.Sprintf("Gbl[%s] := %s", KBX(), RA())
+	case OP_MOVE: // R(A) := R(B)
+		desc = fmt.Sprintf("%s := %s", RA(), RB())
+
 	default:
 		desc = "..."
 	}

@@ -158,7 +158,7 @@ func (ls *LexState) pushClosure(fn *FuncState, v *expdesc) {
 		} else {
 			o = OP_GETUPVAL
 		}
-		fs.kCodeABC(o, 0, int(fn.upvalues[i].info), 0)
+		fs.kCodeABC(o, 0, fn.upvalues[i].info, 0)
 	}
 }
 
