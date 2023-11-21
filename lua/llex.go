@@ -327,10 +327,10 @@ func (ls *LexState) readLongString(seminfo *SemInfo, sep int) {
 		case '[': /* LUA_COMPAT_LSTR */
 			if ls.skipSep() == sep {
 				ls.saveAndNext() /* skip 2nd `[' */
-			}
-			cont++
-			if LUA_COMPAT_LSTR == 1 && sep == 0 {
-				ls.xLexError("nesting of [[...]] is deprecated", '[')
+				cont++
+				if LUA_COMPAT_LSTR == 1 && sep == 0 {
+					ls.xLexError("nesting of [[...]] is deprecated", '[')
+				}
 			}
 		case ']':
 			if ls.skipSep() == sep {

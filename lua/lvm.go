@@ -243,26 +243,27 @@ reentry: /* entry point */
 	)
 
 	if DEBUG {
-		fmt.Println("CONSTANTS======================={")
+		fmt.Println("\u001B[34mCONSTANTS======================={\u001B[0m")
 		for i, value := range k {
-			fmt.Printf("[%d]\t", i)
+			// fmt.Printf("[%d]\t", i)
+			var s string
 			if value.IsNumber() {
-				fmt.Printf("number: %v", value.NumberValue())
+				s = fmt.Sprintf("number: %v", value.NumberValue())
 			} else if value.IsString() {
-				fmt.Printf("string: '%s'", string(value.StringValue().GetStr()))
+				s = fmt.Sprintf("string: '%s'", string(value.StringValue().GetStr()))
 			} else if value.IsFunction() {
 				var f = value.ClosureValue()
 				if f.IsCFunction() {
-					fmt.Printf("go-func: %p", f.C().f)
+					s = fmt.Sprintf("go-func: %p", f.C().f)
 				} else {
-					fmt.Printf("lua-func: %p", f.L().p)
+					s = fmt.Sprintf("lua-func: %p", f.L().p)
 				}
 			} else {
-				fmt.Printf("%s", L.TypeName(value.gcType()))
+				s = fmt.Sprintf("%s", L.TypeName(value.gcType()))
 			}
-			fmt.Println()
+			fmt.Printf("\u001B[34m[%d]\t%s\u001B[0m\n", i, s)
 		}
-		fmt.Print("CONSTANTS=======================}\n\n")
+		fmt.Print("\u001B[34mCONSTANTS=======================}\u001B[0m\n\n")
 	}
 
 	/* main loop of interpreter */
@@ -271,7 +272,17 @@ reentry: /* entry point */
 		pc = pc.Ptr(1) // pc++
 
 		if DEBUG {
-			fmt.Printf("%s\n", i.String())
+			var getKst = func(i int) string {
+				var v = k[i]
+				if v.IsNumber() {
+					return fmt.Sprintf("<%g>", v.NumberValue())
+				}
+				if v.IsString() {
+					return fmt.Sprintf("<'%s'>", v.StringValue().GetStr())
+				}
+				return fmt.Sprintf("<%s>", L.TypeName(v.gcType()))
+			}
+			fmt.Printf("\u001B[34m%s\u001B[0m\n", i.DumpCode(getKst))
 		}
 
 		if L.hookMask&(LUA_MASKLINE|LUA_MASKCOUNT) != 0 &&
