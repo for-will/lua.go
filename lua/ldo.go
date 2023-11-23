@@ -248,7 +248,7 @@ func (L *LuaState) dPrecall(fn StkId, nResults int) int {
 		ci.fn = fn
 		ci.base = base
 		L.base = base
-		ci.top = L.base + int(p.maxStackSize)
+		ci.top = L.base + p.maxStackSize
 		LuaAssert(ci.top <= L.stackLast)
 		L.savedPc = &p.code[0] /* starting point */
 		ci.tailCalls = 0

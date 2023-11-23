@@ -119,8 +119,8 @@ func NewState(f LuaAlloc, ud interface{}) *LuaState {
 	g.freeAlloc = f
 	g.ud = ud
 	g.mainThread = L
-	g.uvHead.l.prev = &g.uvHead
-	g.uvHead.l.next = &g.uvHead
+	g.uvHead.lPrev = &g.uvHead
+	g.uvHead.lNext = &g.uvHead
 	g.GCThreshold = 0 /* mark it as unfinished state */
 	g.StrT.Size = 0
 	g.StrT.NrUse = 0

@@ -193,6 +193,30 @@ func (L *LuaState) vGetTable(t *TValue, key *TValue, val StkId) {
 
 // 对应C函数：`void luaV_execute (lua_State *L, int nexeccalls)'
 func (L *LuaState) vExecute(nExecCalls int) {
+	if DEBUG {
+		var k = L.CI().Func().L().p.k
+		fmt.Println("\u001B[34mCONSTANTS======================={\u001B[0m")
+		for i, value := range k {
+			// fmt.Printf("[%d]\t", i)
+			var s string
+			if value.IsNumber() {
+				s = fmt.Sprintf("number: %v", value.NumberValue())
+			} else if value.IsString() {
+				s = fmt.Sprintf("string: '%s'", string(value.StringValue().GetStr()))
+			} else if value.IsFunction() {
+				var f = value.ClosureValue()
+				if f.IsCFunction() {
+					s = fmt.Sprintf("go-func: %p", f.C().f)
+				} else {
+					s = fmt.Sprintf("lua-func: %p", f.L().p)
+				}
+			} else {
+				s = fmt.Sprintf("%s", L.TypeName(value.gcType()))
+			}
+			fmt.Printf("\u001B[34m[%d]\t%s\u001B[0m\n", i, s)
+		}
+		fmt.Print("\u001B[34mCONSTANTS=======================}\u001B[0m\n\n")
+	}
 reentry: /* entry point */
 	LuaAssert(L.CI().IsLua())
 	var (
@@ -240,31 +264,19 @@ reentry: /* entry point */
 			pc = pc.Ptr(n)
 			L.iThreadYield()
 		}
-	)
-
-	if DEBUG {
-		fmt.Println("\u001B[34mCONSTANTS======================={\u001B[0m")
-		for i, value := range k {
-			// fmt.Printf("[%d]\t", i)
+		getKst = func(i int) string { // DEBUG 使用的辅助函数
+			var v = k[i]
 			var s string
-			if value.IsNumber() {
-				s = fmt.Sprintf("number: %v", value.NumberValue())
-			} else if value.IsString() {
-				s = fmt.Sprintf("string: '%s'", string(value.StringValue().GetStr()))
-			} else if value.IsFunction() {
-				var f = value.ClosureValue()
-				if f.IsCFunction() {
-					s = fmt.Sprintf("go-func: %p", f.C().f)
-				} else {
-					s = fmt.Sprintf("lua-func: %p", f.L().p)
-				}
+			if v.IsNumber() {
+				s = fmt.Sprintf("<%g>", v.NumberValue())
+			} else if v.IsString() {
+				s = fmt.Sprintf("<'%s'>", v.StringValue().GetStr())
 			} else {
-				s = fmt.Sprintf("%s", L.TypeName(value.gcType()))
+				s = fmt.Sprintf("<%s>", L.TypeName(v.gcType()))
 			}
-			fmt.Printf("\u001B[34m[%d]\t%s\u001B[0m\n", i, s)
+			return "\u001B[31m" + s + "\u001B[34m"
 		}
-		fmt.Print("\u001B[34mCONSTANTS=======================}\u001B[0m\n\n")
-	}
+	)
 
 	/* main loop of interpreter */
 	for {
@@ -272,17 +284,7 @@ reentry: /* entry point */
 		pc = pc.Ptr(1) // pc++
 
 		if DEBUG {
-			var getKst = func(i int) string {
-				var v = k[i]
-				if v.IsNumber() {
-					return fmt.Sprintf("<%g>", v.NumberValue())
-				}
-				if v.IsString() {
-					return fmt.Sprintf("<'%s'>", v.StringValue().GetStr())
-				}
-				return fmt.Sprintf("<%s>", L.TypeName(v.gcType()))
-			}
-			fmt.Printf("\u001B[34m%s\u001B[0m\n", i.DumpCode(getKst))
+			fmt.Printf("\u001B[34m%s\u001B[0m\n", i.DumpCode(getKst, L.top-L.base))
 		}
 
 		if L.hookMask&(LUA_MASKLINE|LUA_MASKCOUNT) != 0 &&
@@ -513,10 +515,10 @@ reentry: /* entry point */
 			pc = pc.Ptr(1)
 			continue
 		case OP_CALL:
-			var b = i.GetArgB()
-			var nResults = i.GetArgC() - 1
+			var b = i.GetArgB()            /* 调用函数的参数数量+1，如果b为0则表示函数之上到栈顶都是参数 */
+			var nResults = i.GetArgC() - 1 /* 期望的返回值数量，返回值数量不匹配时，在`dPoscall'中进行调整 */
 			if b != 0 {
-				L.top = base + i.GetArgA() + b
+				L.top = base + i.GetArgA() + b /* b=参数个数+1 */
 			} /* else previous instruction set top */
 			L.savedPc = pc
 			switch L.dPrecall(ra, nResults) {
@@ -658,6 +660,15 @@ reentry: /* entry point */
 				} else {
 					LuaAssert(pc.GetOpCode() == OP_MOVE)
 					ncl.upVals[j] = L.fFindUpVal(&L.stack[base+pc.GetArgB()])
+				}
+				if DEBUG {
+					fmt.Printf("\u001B[34m%s \u001B[35m", pc.DumpCode(getKst, L.top-L.base)[:33])
+					if pc.GetOpCode() == OP_GETUPVAL {
+						fmt.Printf("r%d.upvals[%d] := cl.upvals[%d]", i.GetArgA(), j, pc.GetArgB())
+					} else {
+						fmt.Printf("r%d.upvals[%d] := findupval(r%d)", i.GetArgA(), j, pc.GetArgB())
+					}
+					fmt.Printf("\u001B[0m\n")
 				}
 				pc = pc.Ptr(1) // pc++
 			}

@@ -41,7 +41,7 @@ func (L *LuaState) fFindUpVal(level StkId) *UpVal {
 		}
 		if p.v == level { /* found a corresponding up-value? */
 			if isdead(g, p) { /* is it dead? */
-				p.ChangeWhite() /* ressurect it */
+				p.ChangeWhite() /* resurrect it */
 				return p
 			}
 		}
@@ -53,11 +53,11 @@ func (L *LuaState) fFindUpVal(level StkId) *UpVal {
 	uv.v = level  /* current value lives in the stack */
 	uv.next = *pp /* chain it in the proper position */
 	*pp = uv
-	uv.l.prev = &g.uvHead
-	uv.l.next = g.uvHead.l.next
-	g.uvHead.l.next.l.prev = uv
-	g.uvHead.l.next = uv
-	LuaAssert(uv.l.next.l.prev == uv && uv.l.prev.l.next == uv)
+	uv.lPrev = &g.uvHead
+	uv.lNext = g.uvHead.lNext
+	g.uvHead.lNext.lPrev = uv
+	g.uvHead.lNext = uv
+	LuaAssert(uv.lNext.lPrev == uv && uv.lPrev.lNext == uv)
 	return uv
 }
 
