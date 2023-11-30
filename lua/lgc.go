@@ -75,9 +75,14 @@ func (L *LuaState) cBarrierT(t *Table, v *TValue) {
 }
 
 // 对应C函数：`luaC_objbarrier(L,p,o)'
-func (L *LuaState) cObjBarrier(p *Proto, o GCObject) {
+func (L *LuaState) cObjBarrier(p GCObject, o GCObject) {
 	// todo: cObjBarrier
 	// log.Println("cObjBarrier not implemented")
+}
+
+// 对应C函数：`luaC_objbarriert(L,t,o)'
+func (L *LuaState) cObjBarrierT(t *Table, o GCObject) {
+	// todo: cObjBarrierT
 }
 
 // 对应C函数：`void luaC_link (lua_State *L, GCObject *o, lu_byte tt)'

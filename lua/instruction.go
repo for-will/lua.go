@@ -90,6 +90,9 @@ func (i *Instruction) DumpCode(getKst func(n int) string, top int) string {
 				return s.String()
 			}
 		}
+		BOOL = func(v int) string {
+			return []string{"false", "true"}[v]
+		}
 	)
 	var op = i.GetOpCode()
 	var opName = op.String()
@@ -178,6 +181,28 @@ func (i *Instruction) DumpCode(getKst func(n int) string, top int) string {
 			RA(), RB(), RKC(), REG(i.GetArgA()+1), RB())
 	case OP_CONCAT: /* R(A) := R(B).. ... ..R(C) */
 		desc = fmt.Sprintf("%s := concat(%s)", RA(), Regs(i.GetArgB(), i.GetArgC()))
+	case OP_EQ: /* if ((RK(B) == RK(C)) ~= A) then pc++ */
+		if i.GetArgA() == 0 {
+			desc = fmt.Sprintf("if (%s == %s) then pc++", RKB(), RKC())
+		} else {
+			desc = fmt.Sprintf("if (%s != %s) then pc++", RKB(), RKC())
+		}
+	case OP_LOADBOOL: /* R(A) := (Bool)B; if (C) pc++ */
+		desc = fmt.Sprintf("%s := %s; if (%s) pc++",
+			RA(), BOOL(i.GetArgB()), BOOL(i.GetArgC()))
+	case OP_JMP: /* pc+=sBx */
+		desc = fmt.Sprintf("pc += %d", i.GetArgSBx())
+	case OP_TEST: /* if not (R(A) <=> C) then pc++ */
+		desc = fmt.Sprintf("if (%s is %s) then pc++", RA(), BOOL((i.GetArgC()+1)%2))
+	case OP_TESTSET: /* if (R(B) <=> C) then R(A) := R(B) else pc++ */
+		desc = fmt.Sprintf("if (%s is %s) then %s := %s else pc++",
+			RB(), BOOL(i.GetArgC()), RA(), RB())
+	case OP_FORPREP: /* R(A)-=R(A+2); pc+=sBx */
+		desc = fmt.Sprintf("%s -= %s; pc += %d", RA(), REG(i.GetArgA()+2), i.GetArgSBx())
+	case OP_FORLOOP: /* R(A)+=R(A+2); if R(A) <?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }  */
+		var a = i.GetArgA()
+		desc = fmt.Sprintf("%s+=%s; if %s <?= %s then { pc+=%d; %s=%s }",
+			RA(), REG(a+2), RA(), REG(a+2), i.GetArgSBx(), REG(a+3), RA())
 
 	default:
 		desc = "..."

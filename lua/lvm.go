@@ -9,6 +9,15 @@ import (
 
 const MAXTAGLOOP = 100 /* limit for table tag-method chains (to avoid loops) */
 
+// 对应C函数：`tonumber(o,n)'
+func tonumber(o *TValue, n *TValue) bool {
+	if o.IsNumber() {
+		return true
+	}
+	o = vToNumber(o, n)
+	return o != nil
+}
+
 // 对应C函数：`const TValue *luaV_tonumber (const TValue *obj, TValue *n)'
 func vToNumber(obj *TValue, n *TValue) *TValue {
 	var num LuaNumber
@@ -193,6 +202,12 @@ func (L *LuaState) vGetTable(t *TValue, key *TValue, val StkId) {
 
 // 对应C函数：`void luaV_execute (lua_State *L, int nexeccalls)'
 func (L *LuaState) vExecute(nExecCalls int) {
+	const (
+		ColorCode    = "\u001B[34m"
+		ColorReset   = "\u001B[0m"
+		ColorSlave   = "\u001B[35m"
+		ColorIgnored = "\u001B[36m"
+	)
 	if DEBUG {
 		var k = L.CI().Func().L().p.k
 		fmt.Println("\u001B[34mCONSTANTS======================={\u001B[0m")
@@ -260,10 +275,7 @@ reentry: /* entry point */
 			CheckExp(getBMode(i.GetOpCode()) == OpArgK)
 			return &k[i.GetArgBx()]
 		}
-		DoJump = func(n int) {
-			pc = pc.Ptr(n)
-			L.iThreadYield()
-		}
+
 		getKst = func(i int) string { // DEBUG 使用的辅助函数
 			var v = k[i]
 			var s string
@@ -275,6 +287,26 @@ reentry: /* entry point */
 				s = fmt.Sprintf("<%s>", L.TypeName(v.gcType()))
 			}
 			return "\u001B[31m" + s + "\u001B[34m"
+		}
+		incrPC = func() {
+			pc = pc.Ptr(1)
+		}
+		dumpCode = func(instruction *Instruction, color string) {
+			if DEBUG {
+				fmt.Printf("%s%s%s\n",
+					color, instruction.DumpCode(getKst, L.top-L.base), ColorReset)
+			}
+		}
+		DoJump = func(n int) {
+			pc = pc.Ptr(n)
+			L.iThreadYield()
+		}
+		dumpJumped = func(p *Instruction, n int) {
+			if DEBUG {
+				for j := 0; j < n; j++ {
+					dumpCode(p.Ptr(j), ColorIgnored)
+				}
+			}
 		}
 	)
 
@@ -312,6 +344,7 @@ reentry: /* entry point */
 		case OP_LOADBOOL:
 			ra.SetBoolean(i.GetArgB() == 1)
 			if i.GetArgC() != 0 { /* skip next instruction (if C) */
+				dumpCode(pc, ColorIgnored)
 				pc = pc.Ptr(1) // pc++
 			}
 			continue
@@ -472,6 +505,11 @@ reentry: /* entry point */
 			RA(i).SetObj(L, &L.stack[base+b])
 			continue
 		case OP_JMP:
+			if DEBUG {
+				for j := 0; j < i.GetArgSBx(); j++ {
+					dumpCode(pc.Ptr(j), ColorIgnored)
+				}
+			}
 			DoJump(i.GetArgSBx())
 			continue
 		case OP_EQ:
@@ -482,7 +520,7 @@ reentry: /* entry point */
 				DoJump(pc.GetArgSBx())
 			}
 			base = L.base
-			pc = pc.Ptr(1) // pc++
+			incrPC() // pc++
 			continue
 		case OP_LT:
 			L.savedPc = pc // Protect
@@ -498,21 +536,25 @@ reentry: /* entry point */
 				DoJump(pc.GetArgSBx())
 			}
 			base = L.base
-			pc = pc.Ptr(1) // pc++
+			incrPC() // pc++
 			continue
 		case OP_TEST:
+			dumpCode(pc, ColorSlave)
 			if ra.IsFalse() != (i.GetArgC() != 0) {
+				dumpJumped(pc.Ptr(1), pc.GetArgSBx())
 				DoJump(pc.GetArgSBx())
 			}
-			pc = pc.Ptr(1) // pc++
+			incrPC() // pc++
 			continue
 		case OP_TESTSET:
 			var rb = RB(i)
+			dumpCode(pc, ColorSlave)
 			if rb.IsFalse() != (i.GetArgC() != 0) {
 				ra.SetObj(L, rb)
+				dumpJumped(pc.Ptr(1), pc.GetArgSBx())
 				DoJump(pc.GetArgSBx())
 			}
-			pc = pc.Ptr(1)
+			incrPC()
 			continue
 		case OP_CALL:
 			var b = i.GetArgB()            /* 调用函数的参数数量+1，如果b为0则表示函数之上到栈顶都是参数 */
@@ -601,6 +643,22 @@ reentry: /* entry point */
 				ra.SetNumber(idx)        /* update internal index... */
 				ra.Ptr(3).SetNumber(idx) /* ...and external index */
 			}
+			continue
+		case OP_FORPREP:
+			var init = RA(i)
+			var pLimit = init.Ptr(1)
+			var pStep = init.Ptr(2)
+			L.savedPc = pc /* next steps may throw errors */
+			if !tonumber(init, RA(i)) {
+				L.DbgRunError("'for' initial value must be a number")
+			} else if !tonumber(pLimit, RA(i).Ptr(1)) {
+				L.DbgRunError("'for' limit must be number")
+			} else if !tonumber(pStep, RA(i).Ptr(2)) {
+				L.DbgRunError("'for' step must be a number")
+			}
+			RA(i).SetNumber(luai_numsub(RA(i).NumberValue(), pStep.NumberValue()))
+			dumpJumped(pc, i.GetArgSBx())
+			DoJump(i.GetArgSBx())
 			continue
 		case OP_TFORLOOP:
 			var cb = ra.Ptr(3) /* call base */

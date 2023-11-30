@@ -59,3 +59,8 @@ func (p *Proto) gCheckCode() bool {
 	log.Println("gCheckCode not implemented")
 	return true
 }
+
+// 对应C函数：`void luaG_errormsg (lua_State *L)'
+func (L *LuaState) gErrorMsg() {
+	// todo: gErrorMsg
+}

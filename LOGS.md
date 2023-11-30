@@ -4,3 +4,4 @@
 * [x] 常量的DEBUG打印输出
 * [x] 修复`kExp2RK`中的bug：没能正确的获取常量的index
 * [x] lmem.go中相关的功能放到独立的模块，使用泛型的`type Vec[T any] []T`进行封闭
+* [ ] `baselib`基础库功能

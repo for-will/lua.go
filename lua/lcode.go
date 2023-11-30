@@ -169,12 +169,13 @@ func (fs *FuncState) dischargeJpc() {
 // 对应C函数：`static void patchlistaux (FuncState *fs, int list, int vtarget, int reg, int dtarget)'
 func (fs *FuncState) patchListAux(list int, vtarget int, reg int, dtarget int) {
 	for list != NO_JUMP {
+		var next = fs.getJump(list)
 		if fs.patchTestReg(list, reg) {
 			fs.fixJump(list, vtarget)
 		} else {
 			fs.fixJump(list, dtarget) /* jump to default target */
 		}
-		list = fs.getJump(list)
+		list = next
 	}
 }
 
@@ -205,11 +206,11 @@ func (fs *FuncState) patchTestReg(node int, reg int) bool {
 // 获取跳转指令前面的条件指令（跳转指令由条指令组成，前面有一个条件，后面是跳转地址）
 // 对应C函数：`static Instruction *getjumpcontrol (FuncState *fs, int pc)'
 func (fs *FuncState) getJumpControl(pc int) *Instruction {
-	var pi = &fs.f.code[pc]
-	if pc >= 1 && testTMode(pi.Ptr(-1).GetOpCode()) {
-		return pi.Ptr(-1)
+	var code = fs.f.code
+	if pc >= 1 && testTMode(code[pc-1].GetOpCode()) {
+		return &code[pc-1]
 	} else {
-		return pi
+		return &code[pc]
 	}
 }
 
@@ -279,8 +280,8 @@ func (fs *FuncState) exp2reg(e *expdesc, reg int) {
 		fs.kConcat(&e.t, e.s.info) /* put this jump in `t' list */
 	}
 	if e.hasJumps() {
-		var p_f = NO_JUMP /* position of an eventual LOAD false */
-		var p_t = NO_JUMP /* position of an eventual LOAD true */
+		var psFalse = NO_JUMP /* position of an eventual LOAD false */
+		var psTrue = NO_JUMP  /* position of an eventual LOAD true */
 		if fs.needValue(e.t) || fs.needValue(e.f) {
 			var fj int
 			if e.k == VJMP {
@@ -288,13 +289,13 @@ func (fs *FuncState) exp2reg(e *expdesc, reg int) {
 			} else {
 				fj = fs.kJump()
 			}
-			p_f = fs.codeLabel(reg, 0, 1)
-			p_t = fs.codeLabel(reg, 1, 0)
+			psFalse = fs.codeLabel(reg, 0, 1) // reg := false && pc++ (跳过下面一条指令)
+			psTrue = fs.codeLabel(reg, 1, 0)  // reg := true
 			fs.kPatchToHere(fj)
 		}
 		var final = fs.kGetLabel() /* position after whole expression */
-		fs.patchListAux(e.f, final, reg, p_f)
-		fs.patchListAux(e.t, final, reg, p_t)
+		fs.patchListAux(e.f, final, reg, psFalse)
+		fs.patchListAux(e.t, final, reg, psTrue)
 	}
 	e.f = NO_JUMP
 	e.t = NO_JUMP
@@ -308,6 +309,7 @@ func (fs *FuncState) codeLabel(A int, b int, jump int) int {
 	return fs.kCodeABC(OP_LOADBOOL, A, b, jump)
 }
 
+// discharge2reg 将表达式e的值加载到栈(寄存器)reg位置
 // 对应C函数：`static void discharge2reg (FuncState *fs, expdesc *e, int reg) '
 func (fs *FuncState) discharge2reg(e *expdesc, reg int) {
 	fs.kDischargeVars(e)
@@ -784,36 +786,40 @@ func (fs *FuncState) kPosFix(op BinOpr, e1 *expdesc, e2 *expdesc) {
 	case OPR_POW:
 		fs.codeArith(OP_POW, e1, e2)
 	case OPR_EQ:
-		fs.codeComp(OP_EQ, 1, e1, e2)
+		fs.codeComp(OP_EQ, true, e1, e2)
 	case OPR_NE:
-		fs.codeComp(OP_EQ, 0, e1, e2)
+		fs.codeComp(OP_EQ, false, e1, e2)
 	case OPR_LT:
-		fs.codeComp(OP_LT, 1, e1, e2)
+		fs.codeComp(OP_LT, true, e1, e2)
 	case OPR_LE:
-		fs.codeComp(OP_LE, 1, e1, e2)
+		fs.codeComp(OP_LE, true, e1, e2)
 	case OPR_GT:
-		fs.codeComp(OP_LT, 0, e1, e2)
+		fs.codeComp(OP_LT, false, e1, e2)
 	case OPR_GE:
-		fs.codeComp(OP_LE, 0, e1, e2)
+		fs.codeComp(OP_LE, false, e1, e2)
 	default:
 		LuaAssert(false)
 	}
 }
 
 // 对应C函数：`static void codecomp (FuncState *fs, OpCode op, int cond, expdesc *e1, expdesc *e2)'
-func (fs *FuncState) codeComp(op OpCode, cond int, e1 *expdesc, e2 *expdesc) {
+func (fs *FuncState) codeComp(op OpCode, cond bool, e1 *expdesc, e2 *expdesc) {
 	var o1 = fs.kExp2RK(e1)
 	var o2 = fs.kExp2RK(e2)
 	fs.freeExp(e2)
 	fs.freeExp(e1)
-	if cond == 0 && op != OP_EQ {
+	if cond == false && op != OP_EQ {
 		var temp int /* exchange args to replace by `<' or `<=' */
 		temp = o1
 		o1 = o2
 		o2 = temp /* o1 <==> o2 */
-		cond = 1
+		cond = true
 	}
-	e1.s.info = fs.condJump(op, cond, o1, o2)
+	if cond {
+		e1.s.info = fs.condJump(op, 1, o1, o2)
+	} else {
+		e1.s.info = fs.condJump(op, 0, o1, o2)
+	}
 	e1.k = VJMP
 }
 

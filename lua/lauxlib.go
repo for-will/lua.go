@@ -1,9 +1,17 @@
 package golua
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
+
+// LReg 对应C结构：`struct luaL_Reg'
+type LReg struct {
+	Name string
+	Func LuaCFunction
+}
 
 // LDoString
 // 对应C函数：`luaL_dostring(L, s)'
@@ -172,4 +180,144 @@ func LNewState() *LuaState {
 // 对应C函数：`luaL_typename(L,i)'
 func (L *LuaState) LTypeName(idx int) string {
 	return L.TypeName(L.Type(idx))
+}
+
+// LRegister
+// 对应C函数：`LUALIB_API void (luaL_register) (lua_State *L, const char *libname, const luaL_Reg *l)'
+func (L *LuaState) LRegister(libName string, l []LReg) {
+	L.IOpenLib(libName, l, 0)
+}
+
+// 对应C函数：`static int libsize (const luaL_Reg *l)'
+func libSize(l []LReg) int {
+	return len(l)
+}
+
+// IOpenLib
+// 对应C函数：`LUALIB_API void luaI_openlib (lua_State *L, const char *libname, const luaL_Reg *l, int nup)'
+func (L *LuaState) IOpenLib(libName string, l []LReg, nup int) {
+	if libName != "" {
+		var size = libSize(l)
+		/* check whether lib already exists */
+		L.LFindTable(LUA_REGISTRYINDEX, "_LOADED", 1)
+		L.GetField(-1, libName) /* get _LOADED[libName] */
+		if !L.IsTable(-1) {     /* not found? */
+			L.Pop(1) /* remove previous result */
+			/* try global variable (and create one if it does not exist) */
+			if L.LFindTable(LUA_GLOBALSINDEX, libName, size) != nil {
+				L.LError("name conflict for module '%s'", libName)
+			}
+			L.PushValue(-1)
+			L.SetField(-3, libName) /* _LOADED[libName] = new table */
+		}
+		L.Remove(-2)         /* remove _LOADED table */
+		L.Insert(-(nup + 1)) /* move library table to below upvalues */
+	}
+	for _, reg := range l {
+		for i := 0; i < nup; i++ { /* copy upvalues to the top */
+			L.PushValue(-nup)
+		}
+		L.PushCClosure(reg.Func, nup)
+		L.SetField(-(nup + 2), reg.Name)
+	}
+	L.Pop(nup) /* remove upvalues */
+}
+
+// LFindTable
+// 对应C函数：`LUALIB_API const char *luaL_findtable (lua_State *L, int idx, const char *fname, int szhint)
+func (L *LuaState) LFindTable(idx int, fName string, szHint int) error {
+	L.PushValue(idx)
+	var e int
+	for {
+		e = strings.IndexByte(fName, '.')
+		if e == -1 {
+			e = len(fName)
+		}
+		L.PushString(fName[:e])
+		L.RawGet(-2)
+		if L.IsNil(-1) { /* no such field? */
+			L.Pop(1) /* remove this nil */
+			if e < len(fName) && fName[e] == '.' {
+				L.CreateTable(0, 1)
+			} else {
+				L.CreateTable(0, szHint)
+			}
+			L.PushString(fName[:e])
+			L.PushValue(-2)
+			L.SetTable(-4) /* set new table into field */
+		} else if !L.IsTable(-1) { /* field has a non-table value? */
+			L.Pop(2)                 /* remove table and value */
+			return errors.New(fName) /* return problematic part of the name */
+		}
+		L.Remove(-2) /* remove previous table */
+		if e == len(fName) {
+			break
+		}
+		fName = fName[e+1:]
+	}
+	return nil
+}
+
+// LWhere
+// 对应C函数：`LUALIB_API void luaL_where (lua_State *L, int level)'
+func (L *LuaState) LWhere(level int) {
+	// todo: LWhere
+	/* ... */
+	L.PushLiteral("") /* else, no information available... */
+}
+
+// LError
+// 对应C函数：`LUALIB_API int luaL_error (lua_State *L, const char *fmt, ...)'
+func (L *LuaState) LError(format string, args ...interface{}) int {
+	L.LWhere(1)
+	L.PushVFString(format, args)
+	L.Concat(2)
+	return L.Error()
+}
+
+// LCheckType
+// 对应C函数：`LUALIB_API void luaL_checktype (lua_State *L, int narg, int t)'
+func (L *LuaState) LCheckType(nArg int, t ttype) {
+	if L.Type(nArg) != t {
+		L.tagError(nArg, t)
+	}
+}
+
+// =======================================================
+// Error-report functions
+// =======================================================
+
+// LArgError
+// 对应C函数：`LUALIB_API int luaL_argerror (lua_State *L, int narg, const char *extramsg)'
+func (L *LuaState) LArgError(nArg int, extraMsg string) {
+	// todo: LArgError
+}
+
+// 对应C函数：`static void tag_error (lua_State *L, int narg, int tag)'
+func (L *LuaState) tagError(nArg int, tag ttype) {
+	// todo: tagError
+}
+
+// LCheckInteger
+// 对应C函数：`LUALIB_API lua_Integer luaL_checkinteger (lua_State *L, int narg)'
+func (L *LuaState) LCheckInteger(nArg int) LuaInteger {
+	var d = L.ToInteger(nArg)
+	if d == 0 && !L.IsNumber(nArg) { /* avoid extra test when d is not 0 */
+		L.tagError(nArg, LUA_TNUMBER)
+	}
+	return d
+}
+
+// LCheckInt
+// 对应C函数：`luaL_checkint(L,n)'
+func (L *LuaState) LCheckInt(n int) int {
+	return int(L.LCheckInteger(n))
+}
+
+// LArgCheck
+// 对应C函数：`luaL_argcheck(L, cond,numarg,extramsg)'
+func (L *LuaState) LArgCheck(cond bool, numArg int, extraMsg string) {
+	if !cond {
+		L.LArgError(numArg, extraMsg)
+	}
 }

@@ -1,9 +1,16 @@
 package golua
 
-const LUA_SIGNATURE = "\033Lua"
+const (
+	LUA_VERSION     = "Lua 5.1"
+	LUA_RELEASE     = "Lua 5.1.4"
+	LUA_VERSION_NUM = 501
+	LUA_COPYRIGHT   = "Copyright (C) 1994-2008 Lua.org, PUC-Rio"
+	LUA_AUTHORS     = "R. Ierusalimschy, L. H. de Figueiredo & W. Celes"
+)
 
-/* option for multiple returns in `lua_pcall' and `lua_call' */
-const LUA_MULTRET = -1
+const LUA_SIGNATURE = "\033Lua" /* mark for precompiled code (`<esc>Lua') */
+
+const LUA_MULTRET = -1 /* option for multiple returns in `lua_pcall' and `lua_call' */
 
 /* pseudo-indices */
 const (
@@ -51,8 +58,8 @@ type LuaNumber = float64
 
 type LuaBoolean = bool
 
-// type for integer functions
-type lua_Interger = uintptr
+// LuaInteger type for integer functions
+type LuaInteger = int
 
 // ToString
 // 对应C函数：`lua_tostring(L,i)'
@@ -126,4 +133,10 @@ func (L *LuaState) PushCFunction(f LuaCFunction) {
 // 对应C函数：`lua_setglobal(L,s)'
 func (L *LuaState) SetGlobal(k string) {
 	L.SetField(LUA_GLOBALSINDEX, k)
+}
+
+// Pop
+// 对应C函数：`lua_pop(L,n)'
+func (L *LuaState) Pop(n int) {
+	L.SetTop(-n - 1)
 }

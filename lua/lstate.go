@@ -268,6 +268,11 @@ func (L *LuaState) Base() StkId {
 	return &L.stack[L.base]
 }
 
+// At 返回栈中对象指针
+func (L *LuaState) At(idx int) StkId {
+	return &L.stack[idx]
+}
+
 // AtTop 返回相对于top距离offset个元素的栈上成员指针
 func (L *LuaState) AtTop(offset int) StkId {
 	return &L.stack[L.top+offset]

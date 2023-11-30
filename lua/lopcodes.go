@@ -259,6 +259,7 @@ func (op OpCode) testAMode() bool {
 	return luaP_opmodes[op]&(1<<6) != 0
 }
 
+// 如果是逻辑判断类指令则返回true，否则返回false
 func testTMode(m OpCode) bool {
 	return luaP_opmodes[m]&(1<<7) != 0
 }

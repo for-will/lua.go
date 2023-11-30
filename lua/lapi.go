@@ -48,7 +48,7 @@ func (L *LuaState) PushString(s string) {
 	L.Lock()
 	L.cCheckGC()
 	L.Top().SetString(L, L.sNewStr([]byte(s)))
-	L.apiIncrTop()
+	L.IncrTop()
 	L.Unlock()
 }
 
@@ -76,8 +76,8 @@ func (L *LuaState) apiCheckValidIndex(i StkId) {
 	ApiCheck(L, i != LuaObjNil)
 }
 
-// 对应C函数：`api_incr_top(L)'
-func (L *LuaState) apiIncrTop() {
+// IncrTop 对应C函数：`api_incr_top(L)'
+func (L *LuaState) IncrTop() {
 	ApiCheck(L, L.top < L.CI().top)
 	L.top++
 }
@@ -90,8 +90,20 @@ func (L *LuaState) adjustResults(nres int) {
 }
 
 // 对应C函数：`checkresults(L,na,nr)'
-func (L *LuaState) checkResults(na int, nr int) {
-	ApiCheck(L, nr == LUA_MULTRET || L.CI().top-L.top >= nr-na)
+func (L *LuaState) checkResults(args int, results int) {
+	ApiCheck(L, results == LUA_MULTRET || L.CI().top-L.top >= results-args)
+}
+
+// Call
+// 对应C函数：`LUA_API void lua_call (lua_State *L, int nargs, int nresults)'
+func (L *LuaState) Call(nArgs int, nResults int) {
+	L.Lock()
+	L.apiCheckNElems(nArgs + 1)
+	L.checkResults(nArgs, nResults)
+	var f = L.AtTop(-(nArgs + 1))
+	L.dCall(f, nResults)
+	L.adjustResults(nResults)
+	L.Unlock()
 }
 
 // ToLString
@@ -137,7 +149,7 @@ func index2addr(L *LuaState, idx int) (*TValue, int) {
 		if L.base+idx-1 >= L.top {
 			return LuaObjNil, -1
 		} else {
-			return L.AtBase(idx - 1), idx - 1
+			return L.AtBase(idx - 1), L.base + idx - 1
 		}
 	} else if idx > LUA_REGISTRYINDEX {
 		ApiCheck(L, idx != 0 && -idx <= L.top-L.base)
@@ -169,17 +181,32 @@ func adr2idx(L *LuaState, p *TValue) int {
 	return int(off / unsafe.Sizeof(TValue{}))
 }
 
+// Remove
+// 对应C函数：`LUA_API void lua_remove (lua_State *L, int idx)'
 func (L *LuaState) Remove(idx int) {
 	L.Lock()
 	p, i := index2addr(L, idx)
 	i++
 	for i < L.top {
-		p2 := L.AtBase(i)
+		var p2 = L.At(i)
 		SetObj(L, p, p2)
 		p = p2
 		i++
 	}
 	L.top--
+	L.Unlock()
+}
+
+// Insert
+// 对应C函数：`LUA_API void lua_insert (lua_State *L, int idx)'
+func (L *LuaState) Insert(idx int) {
+	L.Lock()
+	var p, pi = index2addr(L, idx)
+	L.apiCheckValidIndex(p)
+	for q := L.top; q > pi; q-- {
+		L.At(q).SetObj(L, L.At(q-1))
+	}
+	p.SetObj(L, L.Top())
 	L.Unlock()
 }
 
@@ -208,7 +235,7 @@ func (L *LuaState) PushCClosure(fn LuaCFunction, n int) {
 	}
 	L.Top().SetClosure(L, cl)
 	// todo: LuaAssert(cl.IsWhite())
-	L.apiIncrTop()
+	L.IncrTop()
 	L.Unlock()
 }
 
@@ -233,6 +260,53 @@ func (L *LuaState) SetField(idx int, k string) {
 	L.vSetTable(t, &key, L.Top().Ptr(-1))
 	L.top-- /* pop value */
 	L.Unlock()
+}
+
+// RawSet
+// 对应C函数：`LUA_API void lua_rawset (lua_State *L, int idx) '
+func (L *LuaState) RawSet(idx int) {
+	L.Lock()
+	L.apiCheckNElems(2)
+	var t = index2adr(L, idx)
+	L.apiCheck(t.IsTable())
+	t.TableValue().Set(L, L.AtTop(-2)).SetObj(L, L.AtTop(-1))
+	L.cBarrierT(t.TableValue(), L.AtTop(-1))
+	L.top -= 2
+	L.Unlock()
+}
+
+// SetMetaTable
+// 对应C函数：`LUA_API int lua_setmetatable (lua_State *L, int objindex)'
+func (L *LuaState) SetMetaTable(objIndex int) int {
+	var mt *Table
+	L.Lock()
+	L.apiCheckNElems(1)
+	var obj = index2adr(L, objIndex)
+	L.apiCheckValidIndex(obj)
+	t1 := L.AtTop(-1)
+	if t1.IsNil() {
+		mt = nil
+	} else {
+		L.apiCheck(t1.IsTable())
+		mt = t1.TableValue()
+	}
+	switch obj.gcType() {
+	case LUA_TTABLE:
+		obj.TableValue().metatable = mt
+		if mt != nil {
+			L.cObjBarrierT(obj.TableValue(), mt)
+		}
+	case LUA_TUSERDATA:
+		obj.UdataValue().metatable = mt
+		if mt != nil {
+			L.cObjBarrier(obj.UdataValue(), mt)
+		}
+	default:
+		L.G().mt[obj.gcType()] = mt
+	}
+	L.top--
+	L.Unlock()
+	return 1
 }
 
 // Type
@@ -346,4 +420,216 @@ func (L *LuaState) TypeName(t ttype) string {
 		return "no value"
 	}
 	return LuaTTypeNames[t]
+}
+
+// PushValue
+// 对应C函数：`LUA_API void lua_pushvalue (lua_State *L, int idx)'
+func (L *LuaState) PushValue(idx int) {
+	L.Lock()
+	L.Top().SetObj(L, index2adr(L, idx))
+	L.IncrTop()
+	L.Unlock()
+}
+
+// RawGet
+// 对应C函数：`LUA_API void lua_rawget (lua_State *L, int idx)'
+func (L *LuaState) RawGet(idx int) {
+	L.Lock()
+	var t = index2adr(L, idx)
+	ApiCheck(L, t.IsTable())
+	var t1 = L.AtTop(-1)
+	t1.SetObj(L, t.TableValue().Get(t1))
+	L.Unlock()
+}
+
+// RawGetI
+// 对应C函数：`LUA_API void lua_rawgeti (lua_State *L, int idx, int n) '
+func (L *LuaState) RawGetI(idx int, n int) {
+	L.Lock()
+	var o = index2adr(L, idx)
+	L.apiCheck(o.IsTable())
+	L.Top().SetObj(L, o.TableValue().GetNum(n))
+	L.IncrTop()
+	L.Unlock()
+}
+
+// CreateTable
+// 对应C函数：`LUA_API void lua_createtable (lua_State *L, int narray, int nrec)'
+func (L *LuaState) CreateTable(nArray, nRec int) {
+	L.Lock()
+	L.cCheckGC()
+	L.Top().SetTable(L, L.hNew(nArray, nRec))
+	L.IncrTop()
+	L.Unlock()
+}
+
+// GetMetaTable
+// 对应C函数：`LUA_API int lua_getmetatable (lua_State *L, int objindex)'
+func (L *LuaState) GetMetaTable(objIndex int) int {
+	L.Lock()
+	var obj = index2adr(L, objIndex)
+	var mt *Table
+	switch obj.gcType() {
+	case LUA_TTABLE:
+		mt = obj.TableValue().metatable
+	case LUA_TUSERDATA:
+		mt = obj.UdataValue().metatable
+	default:
+		mt = L.G().mt[obj.tt]
+	}
+	var res int
+	if mt == nil {
+		res = 0
+	} else {
+		L.Top().SetTable(L, mt)
+		L.IncrTop()
+		res = 1
+	}
+	L.Unlock()
+	return res
+}
+
+// NewTable
+// 对应C函数：`lua_newtable(L)'
+func (L *LuaState) NewTable() {
+	L.CreateTable(0, 0)
+}
+
+// SetTable stack[idx][stack[-2]] = stack[-1]
+// 对应C函数：`LUA_API void lua_settable (lua_State *L, int idx)'
+func (L *LuaState) SetTable(idx int) {
+	L.Lock()
+	L.apiCheckNElems(2)
+	var t = index2adr(L, idx)
+	L.apiCheckValidIndex(t)
+	L.vSetTable(t, L.AtTop(-2), L.AtTop(-2))
+	L.top -= 2 /* pop index and value */
+	L.Unlock()
+}
+
+// GetField
+// 对应C函数：`LUA_API void lua_getfield (lua_State *L, int idx, const char *k)'
+func (L *LuaState) GetField(idx int, k string) {
+	L.Lock()
+	var t = index2adr(L, idx)
+	L.apiCheckValidIndex(t)
+	var key TValue
+	key.SetString(L, L.sNewLiteral(k))
+	L.vGetTable(t, &key, L.Top())
+	L.IncrTop()
+	L.Unlock()
+}
+
+// PushVFString
+// 对应C函数：`LUA_API const char *lua_pushvfstring (lua_State *L, const char *fmt, va_list argp)'
+func (L *LuaState) PushVFString(format string, args []interface{}) []byte {
+	L.Lock()
+	L.cCheckGC()
+	var ret = L.oPushVfString([]byte(format), args)
+	L.Unlock()
+	return ret
+}
+
+// LuaNext
+// 对应C函数：`LUA_API int lua_next (lua_State *L, int idx)'
+func (L *LuaState) LuaNext(idx int) bool {
+	L.Lock()
+	var t = index2adr(L, idx)
+	L.apiCheck(t.IsTable())
+	var more = t.TableValue().hNext(L, L.AtTop(-1))
+	if more {
+		L.IncrTop()
+	} else { /* no more elements */
+		L.top -= 1 /* remove key */
+	}
+	L.Unlock()
+	return more
+}
+
+// Concat
+// 对应C函数：`LUA_API void lua_concat (lua_State *L, int n)'
+func (L *LuaState) Concat(n int) {
+	L.Lock()
+	L.apiCheckNElems(n)
+	if n >= 2 {
+		L.cCheckGC()
+		L.vConcat(n, L.top-L.base-1)
+		L.top -= n - 1
+	} else if n == 0 { /* push empty string */
+		L.Top().SetString(L, L.sNewLiteral(""))
+		L.IncrTop()
+	}
+	/* else n == 1; nothing to do */
+	L.Unlock()
+}
+
+// 对应C函数：`LUA_API int lua_error (lua_State *L)'
+func (L *LuaState) Error() int {
+	L.Lock()
+	L.apiCheckNElems(1)
+	L.gErrorMsg()
+	L.Unlock()
+	return 0
+}
+
+/* push functions (C -> stack) */
+
+// PushNil
+// 对应C函数：`LUA_API void lua_pushnil (lua_State *L)'
+func (L *LuaState) PushNil() {
+	L.Lock()
+	L.Top().SetNil()
+	L.IncrTop()
+	L.Unlock()
+}
+
+// PushInteger
+// 对应C函数：`LUA_API void lua_pushinteger (lua_State *L, lua_Integer n)'
+func (L *LuaState) PushInteger(n LuaInteger) {
+	L.Lock()
+	L.Top().SetNumber(LuaNumber(n))
+	L.IncrTop()
+	L.Unlock()
+}
+
+// PushBoolean
+// 对应C函数：`LUA_API void lua_pushboolean (lua_State *L, int b)'
+func (L *LuaState) PushBoolean(b bool) {
+	L.Lock()
+	L.Top().SetBoolean(b)
+	L.IncrTop()
+	L.Unlock()
+}
+
+// ToInteger
+// 对应C函数：`LUA_API lua_Integer lua_tointeger (lua_State *L, int idx)'
+func (L *LuaState) ToInteger(idx int) LuaInteger {
+	var o = index2adr(L, idx)
+	var n TValue
+	if tonumber(o, &n) {
+		var num = o.NumberValue()
+		return lua_number2integer(num)
+	} else {
+		return 0
+	}
+}
+
+// IsNumber
+// 对应C函数：`LUA_API int lua_isnumber (lua_State *L, int idx)'
+func (L *LuaState) IsNumber(idx int) bool {
+	var n TValue
+	var o = index2adr(L, idx)
+	return tonumber(o, &n)
+}
+
+// NewUserData
+// 对应C函数：`LUA_API void *lua_newuserdata (lua_State *L, size_t size) '
+func (L *LuaState) NewUserData(size int) interface{} {
+	L.Lock()
+	L.cCheckGC()
+	var u = L.sNewUData(size, L.getCurrEnv())
+	L.Top().SetUserData(L, u)
+	L.IncrTop()
+	L.Unlock()
+	return u.data
 }

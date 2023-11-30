@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	golua "luar/lua"
+	"luar/lua/lib"
 )
 
 func print(L *golua.LuaState) int {
@@ -31,6 +32,7 @@ func print(L *golua.LuaState) int {
 
 func main() {
 	var L = golua.LuaOpen()
+	lib.OpenLibs(L)
 	L.Register("print", print)
 	if L.LDoFile("hello.lua") != 0 {
 		fmt.Errorf("%s\n", L.ToString(-1))

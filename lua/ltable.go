@@ -190,26 +190,26 @@ func (t *Table) findIndex(L *LuaState, key StkId) int {
 	}
 }
 
-// hNext 对Table进行迭代
+// hNext 对Table进行迭代, 在key处存放key值，在key+1处存放value值，如果没有元素返回false
 // 同C函数 `int luaH_next (lua_State *L, Table *t, StkId key)`
-func (t *Table) hNext(L *LuaState, key StkId) int {
+func (t *Table) hNext(L *LuaState, key StkId) bool {
 	i := t.findIndex(L, key) /* find original element */
 	i++
 	for ; i < t.sizeArray; i++ { /* try first array part */
 		if !t.array[i].IsNil() { /* a non-nil value? */
 			key.SetNumber(LuaNumber(i + 1))
 			SetObj(L, key.Ptr(1), &t.array[i])
-			return 1
+			return true
 		}
 	}
 	for i -= t.sizeArray; i < int(t.SizeNode()); i++ { /* then hash part */
 		if !t.GetNode(uint64(i)).GetVal().IsNil() { /* a non-nil value? */
 			SetObj(L, key, t.GetNode(uint64(i)).GetKeyVal())
 			SetObj(L, key.Ptr(1), t.GetNode(uint64(i)).GetVal())
-			return 1
+			return true
 		}
 	}
-	return 0 /* no more elements */
+	return false /* no more elements */
 }
 
 /* Rehash */

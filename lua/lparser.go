@@ -669,11 +669,11 @@ func (ls *LexState) newLocalVar(name *TString, n int) {
 
 // 对应C函数：`static int registerlocalvar (LexState *ls, TString *varname)'
 func (ls *LexState) registerLocalVar(varName *TString) int {
-	var fs = ls.fs
-	var f = fs.f
-	var oldSize = f.locVars.Size()
-	// mGrowVector(ls.L, &f.locVars, fs.nLocVars, &f.sizeLocVars,
-	// 	SHRT_MAX, "too many local variables")
+	var (
+		fs      = ls.fs
+		f       = fs.f
+		oldSize = f.locVars.Size()
+	)
 	f.locVars.Grow(ls.L, fs.nLocVars, SHRT_MAX, "too many local variables")
 	for oldSize < f.locVars.Size() {
 		f.locVars[oldSize].varName = nil
@@ -806,13 +806,13 @@ func (ls *LexState) prefixExp(v *expdesc) {
 func (ls *LexState) singleVar(v *expdesc) {
 	var varName = ls.strCheckName()
 	var fs = ls.fs
-	if singleVarAux(fs, varName, v, 1) == VGLOBAL {
+	if singleVarAux(fs, varName, v, true) == VGLOBAL {
 		v.s.info = fs.kStringK(varName) /* info points to global name */
 	}
 }
 
 // 对应C函数：`static int singlevaraux (FuncState *fs, TString *n, expdesc *var, int base)'
-func singleVarAux(fs *FuncState, n *TString, va *expdesc, base int) expkind {
+func singleVarAux(fs *FuncState, n *TString, va *expdesc, base bool) expkind {
 	if fs == nil { /* no more levels? */
 		va.initExp(VGLOBAL, NO_REG) /* default is global variable */
 		return VGLOBAL
@@ -820,12 +820,12 @@ func singleVarAux(fs *FuncState, n *TString, va *expdesc, base int) expkind {
 	var v = fs.searchVar(n) /* look up at current level */
 	if v >= 0 {
 		va.initExp(VLOCAL, v)
-		if base != 0 {
+		if !base {
 			fs.markUpval(v) /* local will be used as an upval */
 		}
 		return VLOCAL
 	} else { /* not found at current level; try upper one */
-		if singleVarAux(fs.prev, n, va, 0) == VGLOBAL {
+		if singleVarAux(fs.prev, n, va, false) == VGLOBAL {
 			return VGLOBAL
 		}
 		va.s.info = fs.indexUpValue(n, va) /* else was LOCAL or UPVAL */
@@ -1130,11 +1130,11 @@ func (ls *LexState) adjustAssign(nVars int, nExps int, e *expdesc) {
 	} else {
 		if e.k != VVOID {
 			fs.kExp2NextReg(e) /* close last expression */
-			if extra > 0 {
-				var reg = fs.freeReg
-				fs.kReserveRegs(extra)
-				fs.kNil(reg, extra)
-			}
+		}
+		if extra > 0 {
+			var reg = fs.freeReg
+			fs.kReserveRegs(extra)
+			fs.kNil(reg, extra)
 		}
 	}
 }

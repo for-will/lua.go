@@ -5,4 +5,5 @@ type Udata struct {
 	metatable *Table
 	env       *Table
 	len       int
+	data      []byte
 }

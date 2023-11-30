@@ -14,6 +14,10 @@ func ApiCheck(L *LuaState, o bool) {
 	// 不做检查
 }
 
+func (L *LuaState) apiCheck(c bool) {
+	// 不做检查
+}
+
 const LUA_NUMBER_FMT = "%.14g"
 
 const LUA_QS = "'%s'"
@@ -57,6 +61,14 @@ func luai_numle(a, b LuaNumber) bool {
 }
 func luai_numisnan(a LuaNumber) bool {
 	return !luai_numeq(a, a)
+}
+
+func lua_number2int(d LuaNumber) int {
+	return int(d)
+}
+
+func lua_number2integer(d LuaNumber) LuaInteger {
+	return LuaInteger(d)
 }
 
 // LUAI_MAXCCALLS is the maximum depth for nested C calls (short) and
