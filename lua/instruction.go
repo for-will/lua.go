@@ -203,6 +203,13 @@ func (i *Instruction) DumpCode(getKst func(n int) string, top int) string {
 		var a = i.GetArgA()
 		desc = fmt.Sprintf("%s+=%s; if %s <?= %s then { pc+=%d; %s=%s }",
 			RA(), REG(a+2), RA(), REG(a+2), i.GetArgSBx(), REG(a+3), RA())
+	case OP_TFORLOOP: /* R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2)) */
+		/* if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++ */
+		var a = i.GetArgA()
+		var c = i.GetArgC()
+		desc = fmt.Sprintf("%s := %s(%s); \n", Regs(a+3, a+2+c), RA(), Regs(a+1, a+2))
+		desc += fmt.Sprintf("%31s// if %s ~= nil then %s=%s else pc++",
+			" ", REG(a+3), REG(a+2), REG(a+3))
 
 	default:
 		desc = "..."

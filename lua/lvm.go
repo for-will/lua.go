@@ -672,7 +672,8 @@ reentry: /* entry point */
 			base = L.base
 			L.top = L.CI().top
 			cb = RA(i).Ptr(3) /* previous call may change the stack */
-			if !cb.IsNil() {  /* continue loop? */
+			dumpCode(pc, ColorSlave)
+			if !cb.IsNil() { /* continue loop? */
 				cb.Ptr(-1).SetObj(L, cb) /* save control variable */
 				DoJump(pc.GetArgSBx())   /* jump back */
 			}

@@ -68,17 +68,17 @@ var DummyNodes = [1]Node{{
 
 var DummyNode = &DummyNodes[0]
 
-func (t *Table) SizeNode() uint64 {
+func (t *Table) SizeNode() int {
 	return 1 << t.lSizeNode
 }
 
-func (t *Table) GetNode(i uint64) *Node {
+func (t *Table) GetNode(i int) *Node {
 	return &t.node[i]
 }
 
 func (t *Table) HashPow2(n uint64) *Node {
-	i := LMod(n, t.SizeNode())
-	return t.GetNode(i)
+	i := LMod(n, uint64(t.SizeNode()))
+	return t.GetNode(int(i))
 }
 
 // HashMod 计算hash
@@ -86,8 +86,8 @@ func (t *Table) HashPow2(n uint64) *Node {
 // they tend to have many 2 factors.
 // 对应C函数：`hashmod(t,n)'
 func (t *Table) HashMod(n uint64) *Node {
-	n %= (t.SizeNode() - 1) | 1
-	return t.GetNode(n)
+	n %= (uint64(t.SizeNode()) - 1) | 1
+	return t.GetNode(int(n))
 }
 
 // HashNum
@@ -196,10 +196,10 @@ func (t *Table) hNext(L *LuaState, key StkId) bool {
 			return true
 		}
 	}
-	for i -= t.sizeArray; i < int(t.SizeNode()); i++ { /* then hash part */
-		if !t.GetNode(uint64(i)).GetVal().IsNil() { /* a non-nil value? */
-			SetObj(L, key, t.GetNode(uint64(i)).GetKeyVal())
-			SetObj(L, key.Ptr(1), t.GetNode(uint64(i)).GetVal())
+	for i -= t.sizeArray; i < t.SizeNode(); i++ { /* then hash part */
+		if n := t.GetNode(i); !n.GetVal().IsNil() { /* a non-nil value? */
+			key.SetObj(L, n.GetKeyVal())
+			key.Ptr(1).SetObj(L, n.GetVal())
 			return true
 		}
 	}
@@ -314,7 +314,7 @@ func (t *Table) setNodeVector(L *LuaState, size int) {
 		size = 1 << lSize
 		t.node.Init(size, L)
 		for i := 0; i < size; i++ {
-			n := t.GetNode(uint64(i))
+			n := t.GetNode(i)
 			n.SetNext(nil)
 			n.GetKeyVal().SetNil()
 			n.GetVal().SetNil()
@@ -417,11 +417,11 @@ func (L *LuaState) hNew(narray int, nhash int) *Table {
 func (t *Table) getFreePos() *Node {
 	for t.lastFree > 0 {
 		t.lastFree--
-		if n := t.GetNode(uint64(t.lastFree)); n.GetKey().IsNil() {
+		if n := t.GetNode(t.lastFree); n.GetKey().IsNil() {
 			return n
 		}
 	}
-	return nil // could not find a free place
+	return nil /* could not find a free place */
 }
 
 // newKey 在table中添加插入新的key并返回对应value的指针
