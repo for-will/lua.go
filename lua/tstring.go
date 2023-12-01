@@ -57,7 +57,7 @@ func (L *LuaState) sResize(newSize uint64) {
 	for i := 0; i < int(tb.Size); i++ {
 		p := tb.Hash[i]
 		for p != nil {
-			next := p.Next() // save next
+			next := p.GetNext() // save next
 			h := p.ToTString().Hash
 			h1 := LMod(h, newSize) // new position
 			LuaAssert((h % newSize) == LMod(h, newSize))
@@ -118,7 +118,7 @@ func (L *LuaState) sNewStr(str []byte) *TString {
 		h = h ^ ((h << 5) + (h >> 2)) + uint64(str[l1-1])
 	}
 	var o = L.G().StrT.Hash[LMod(h, L.G().StrT.Size)]
-	for ; o != nil; o = o.Next() {
+	for ; o != nil; o = o.GetNext() {
 		ts := o.ToTString()
 		if ts.Len == l && bytes.Compare(str, ts.GetStr()) == 0 {
 			// todo: if (isdead(G(L), o)) changewhite(o);

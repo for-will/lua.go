@@ -87,3 +87,9 @@ func (v *Vec[T]) growAux_(h ErrorHandler, limit int, errMsg string) {
 	copy(v2, *v)
 	*v = v2
 }
+
+// ElemIndex 返回e在arr中的位置
+func ElemIndex[T any](arr []T, e *T) int {
+	var offset = uintptr(unsafe.Pointer(e)) - uintptr(unsafe.Pointer(&arr[0]))
+	return int(offset / unsafe.Sizeof(arr[0]))
+}

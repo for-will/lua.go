@@ -17,7 +17,7 @@ const (
 type GCObject interface {
 	gcType() ttype
 	setType(t ttype)
-	Next() GCObject
+	GetNext() GCObject
 	SetNext(obj GCObject)
 	SetMarked(m lu_byte)
 	ToTString() *TString // gco2ts
@@ -360,7 +360,7 @@ func correctstack(L *LuaState, oldStack []TValue) {
 		p := uintptr(unsafe.Pointer(v)) - oldPtr + stackPtr
 		return (*TValue)(unsafe.Pointer(p))
 	}
-	for up := L.openUpval; up != nil; up = up.Next() {
+	for up := L.openUpval; up != nil; up = up.GetNext() {
 		uv := up.ToUpval()
 		uv.v = correct(uv.v)
 	}

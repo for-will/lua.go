@@ -124,7 +124,7 @@ for _ = 10, 3, -1 do
 end]]
 
 --- 泛型循环
-local t = { 1, 2, 3, 4 }
+local t = { 1, 2, 3, 4, c = 'Cook', b = 'Bob', ['aa'] = 'Alice', 'door' }
 for k, v in pairs(t) do
-    print(v)
+    print(k, v)
 end

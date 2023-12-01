@@ -9,7 +9,7 @@ type CommonHeader struct {
 	marked lu_byte
 }
 
-func (c *CommonHeader) Next() GCObject {
+func (c *CommonHeader) GetNext() GCObject {
 	return c.next
 }
 

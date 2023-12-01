@@ -4,7 +4,6 @@ import (
 	"luar/lua/mem"
 	"math"
 	"reflect"
-	"unsafe"
 )
 
 const (
@@ -24,11 +23,6 @@ func (k *TKey) GetTVal() *TValue {
 type Node struct {
 	i_val TValue
 	i_key TKey
-}
-
-func (n *Node) OffsetFrom(origin *Node) int {
-	offset := uintptr(unsafe.Pointer(origin)) - uintptr(unsafe.Pointer(n))
-	return int(offset / unsafe.Sizeof(*n))
 }
 
 func (n *Node) GetVal() *TValue {
@@ -80,10 +74,6 @@ func (t *Table) SizeNode() uint64 {
 
 func (t *Table) GetNode(i uint64) *Node {
 	return &t.node[i]
-}
-
-func (t *Table) IndexNode(n *Node) int {
-	return n.OffsetFrom(&t.node[0])
 }
 
 func (t *Table) HashPow2(n uint64) *Node {
@@ -149,7 +139,7 @@ func (t *Table) MainPosition(key *TValue) *Node {
 	}
 }
 
-// returns the index for `key` is `key` is an appropriate key to live in
+// returns the index for `key` if `key` is an appropriate key to live in
 // the array part of the table, -1 otherwise.
 // 对应C函数：`static int arrayindex (const TValue *key)'
 func arrayIndex(key *TValue) int {
@@ -163,6 +153,10 @@ func arrayIndex(key *TValue) int {
 	return -1 /* `key` did not match some condition */
 }
 
+// returns the index of a `key' for table traversals. First goes all
+// elements in the array part, then elements in the hash part. The
+// beginning of a traversal is signalled by -1.
+// 对应C函数：`static int findindex (lua_State *L, Table *t, StkId key)'
 func (t *Table) findIndex(L *LuaState, key StkId) int {
 	if key.IsNil() {
 		return -1 /* first iteration */
@@ -175,11 +169,11 @@ func (t *Table) findIndex(L *LuaState, key StkId) int {
 
 		for n != nil { /* check whether `key` is somewhere in the chain */
 			/* key may be dead already, but it is ok to use it in `next` */
-			if oRawEqualObj(n.GetVal(), key) ||
+			if oRawEqualObj(n.GetKeyVal(), key) ||
 				(n.GetKey().gcType() == LUA_TDEADKEY &&
 					key.IsCollectable() &&
 					n.GetKey().GcValue() == key.GcValue()) {
-				i = t.IndexNode(n)
+				i = mem.ElemIndex(t.node, n)
 				/* hash elements are numbered after array ones */
 				return i + t.sizeArray
 			}
